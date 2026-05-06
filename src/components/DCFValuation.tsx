@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { StockInfo, StockMetrics } from '@/types/stock';
+import DashboardSection from '@/components/DashboardSection';
 
 interface Props {
   info: StockInfo;
@@ -37,7 +38,7 @@ function computeDCFModel(
   const tgrR = tgr / 100;
   const growthR = revGrowth / 100;
   const fcfR = fcfMargin / 100;
-  const YEARS = 7;
+  const years = 7;
 
   let pvFCF = 0;
   let lastFCF = 0;
@@ -46,9 +47,9 @@ function computeDCFModel(
   const discountedFCFs: number[] = [];
   let rev = baseRevenue;
 
-  for (let i = 1; i <= YEARS; i++) {
-    const yr_growth = Math.max(growthR * Math.pow(0.85, i - 1), tgrR);
-    rev = rev * (1 + yr_growth);
+  for (let i = 1; i <= years; i++) {
+    const yrGrowth = Math.max(growthR * Math.pow(0.85, i - 1), tgrR);
+    rev = rev * (1 + yrGrowth);
     const fcf = rev * fcfR;
     const df = Math.pow(1 + waccR, i);
     const pv = fcf / df;
@@ -60,7 +61,7 @@ function computeDCFModel(
   }
 
   const terminalValue = (lastFCF * (1 + tgrR)) / (waccR - tgrR);
-  const pvTerminal = terminalValue / Math.pow(1 + waccR, YEARS);
+  const pvTerminal = terminalValue / Math.pow(1 + waccR, years);
   const equityValue = pvFCF + pvTerminal - netDebt;
   const impliedPrice = sharesOutstanding > 0 ? equityValue / sharesOutstanding : 0;
 
@@ -81,21 +82,22 @@ function computeReverseDCF(
   const fcfR = fcfMargin / 100;
   const targetEV = currentPrice * sharesOutstanding + netDebt;
 
-  let lo = 0, hi = 1;
+  let lo = 0;
+  let hi = 1;
   for (let iter = 0; iter < 60; iter++) {
     const mid = (lo + hi) / 2;
     let pvFCF = 0;
     let lastFCF = 0;
-    let rev = baseRevenue;
     for (let i = 1; i <= 7; i++) {
-      rev = baseRevenue * Math.pow(1 + mid, i);
+      const rev = baseRevenue * Math.pow(1 + mid, i);
       const fcf = rev * fcfR;
       pvFCF += fcf / Math.pow(1 + waccR, i);
       lastFCF = fcf;
     }
     const tv = (lastFCF * (1 + tgrR)) / (waccR - tgrR);
     const ev = pvFCF + tv / Math.pow(1 + waccR, 7);
-    if (ev < targetEV) lo = mid; else hi = mid;
+    if (ev < targetEV) lo = mid;
+    else hi = mid;
   }
   return ((lo + hi) / 2) * 100;
 }
@@ -134,8 +136,8 @@ export default function DCFValuation({ info, metrics }: Props) {
     : 0;
 
   const handleScenario = (s: Scenario) => {
-    setScenario(s);
     const sc = SCENARIOS[s];
+    setScenario(s);
     setWacc(sc.wacc);
     setTgr(sc.tgr);
     setRevGrowth(sc.revGrowth);
@@ -152,7 +154,6 @@ export default function DCFValuation({ info, metrics }: Props) {
 
   const currentYear = new Date().getFullYear();
   const projYears = Array.from({ length: 7 }, (_, i) => `FY${currentYear + i + 1}E`);
-
   const fmtShares = sharesOutstanding >= 1e9
     ? `${(sharesOutstanding / 1e9).toFixed(2)}B`
     : sharesOutstanding >= 1e6
@@ -160,30 +161,33 @@ export default function DCFValuation({ info, metrics }: Props) {
     : sharesOutstanding.toLocaleString();
 
   return (
-    <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 shadow-xl border border-slate-700/50">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-1.5 h-7 bg-cyan-500 rounded-full" />
-        <div>
-          <h2 className="text-xl font-bold text-white">DCF Valuation Model</h2>
-          <p className="text-xs text-slate-500 uppercase tracking-wider">Interactive Discounted Cash Flow · {info.ticker}</p>
+    <DashboardSection
+      title="DCF valuation model"
+      eyebrow={`Interactive discounted cash flow | ${info.ticker}`}
+      description="A scenario model for sensitivity analysis. Treat the output as a decision aid, not a live analyst price target."
+      tone="analysis"
+      headerAction={
+        <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/8 px-4 py-3 text-sm text-cyan-100">
+          <span className="block text-xs uppercase tracking-[0.16em] text-cyan-300/70">Model source</span>
+          <span className="mt-1 block text-slate-300">Derived from market cap, price, and editable assumptions</span>
         </div>
-      </div>
-
-      {/* Scenario Tabs */}
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {(Object.keys(SCENARIOS) as Scenario[]).map(s => (
+      }
+    >
+      <div className="mb-6 flex flex-wrap gap-2">
+        {(Object.keys(SCENARIOS) as Scenario[]).map((s) => (
           <button
             key={s}
+            type="button"
+            aria-pressed={scenario === s}
             onClick={() => handleScenario(s)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${
+            className={`pressable focus-ring rounded-xl border px-4 py-2 text-sm font-semibold ${
               scenario === s
                 ? s === 'bull'
-                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                  ? 'border-emerald-500/40 bg-emerald-500/18 text-emerald-300'
                   : s === 'base'
-                  ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400'
-                  : 'bg-red-500/20 border-red-500/40 text-red-400'
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-slate-300'
+                  ? 'border-cyan-500/40 bg-cyan-500/18 text-cyan-300'
+                  : 'border-red-500/40 bg-red-500/18 text-red-300'
+                : 'border-slate-700 bg-slate-950/45 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
             }`}
           >
             {SCENARIOS[s].label}
@@ -191,94 +195,77 @@ export default function DCFValuation({ info, metrics }: Props) {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Controls Panel */}
-        <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-5 self-start">
-          <h3 className="text-sm font-bold text-white mb-5">Model Inputs</h3>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="self-start rounded-2xl border border-slate-700/70 bg-slate-950/40 p-5">
+          <h3 className="mb-5 text-sm font-bold text-slate-50">Model inputs</h3>
 
           {[
             { label: 'WACC', value: wacc, set: setWacc, min: 7, max: 15, step: 0.5, fmt: (v: number) => `${v.toFixed(1)}%` },
             { label: 'Terminal Growth Rate', value: tgr, set: setTgr, min: 0.5, max: 5, step: 0.5, fmt: (v: number) => `${v.toFixed(1)}%` },
             { label: 'Revenue Growth (Yr 1)', value: revGrowth, set: setRevGrowth, min: 2, max: 40, step: 1, fmt: (v: number) => `${v}%` },
             { label: 'FCF Margin', value: fcfMargin, set: setFcfMargin, min: 5, max: 45, step: 1, fmt: (v: number) => `${v}%` },
-          ].map(({ label, value, set, min, max, step, fmt }) => (
-            <div key={label} className="mb-5">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-xs text-slate-400">{label}</span>
-                <span className="text-xs font-bold text-cyan-400 font-mono">{fmt(value)}</span>
+          ].map(({ label, value, set, min, max, step, fmt }) => {
+            const inputId = `${info.ticker}-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+            return (
+              <div key={label} className="mb-5">
+                <div className="mb-2 flex items-center justify-between">
+                  <label htmlFor={inputId} className="text-xs text-slate-400">{label}</label>
+                  <span className="font-mono text-xs font-bold text-cyan-300">{fmt(value)}</span>
+                </div>
+                <input
+                  id={inputId}
+                  type="range"
+                  min={min}
+                  max={max}
+                  step={step}
+                  value={value}
+                  onChange={(e) => set(parseFloat(e.target.value))}
+                  className="focus-ring h-1 w-full cursor-pointer appearance-none rounded"
+                  style={{
+                    background: `linear-gradient(to right, #22d3ee ${((value - min) / (max - min)) * 100}%, #334155 ${((value - min) / (max - min)) * 100}%)`,
+                    accentColor: '#22d3ee',
+                  }}
+                />
               </div>
-              <input
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={value}
-                onChange={e => set(parseFloat(e.target.value))}
-                className="w-full h-1 rounded appearance-none cursor-pointer"
-                style={{
-                  background: `linear-gradient(to right, #22d3ee ${((value - min) / (max - min)) * 100}%, #334155 ${((value - min) / (max - min)) * 100}%)`,
-                  accentColor: '#22d3ee',
-                }}
-              />
-            </div>
-          ))}
+            );
+          })}
 
-          <div className="pt-4 border-t border-slate-700 space-y-3">
-            <div>
-              <div className="text-xs text-slate-500">Projection Period</div>
-              <div className="text-sm font-mono text-slate-300">7 Years</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Est. Shares Outstanding</div>
-              <div className="text-sm font-mono text-slate-300">{fmtShares}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Est. Base Revenue (FY0)</div>
-              <div className="text-sm font-mono text-slate-300">{formatCap(baseRevenue, info.currency)}</div>
-            </div>
+          <div className="space-y-3 border-t border-slate-700 pt-4">
+            <InputMeta label="Projection Period" value="7 Years" />
+            <InputMeta label="Est. Shares Outstanding" value={fmtShares} />
+            <InputMeta label="Est. Base Revenue" value={formatCap(baseRevenue, info.currency)} />
           </div>
         </div>
 
-        {/* Results Panel */}
-        <div className="xl:col-span-2 space-y-4">
-          {/* Implied Price */}
-          <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-6 text-center">
-            <div className="text-xs text-slate-400 uppercase tracking-wider mb-2">Implied Share Price</div>
+        <div className="space-y-4 xl:col-span-2">
+          <div className="rounded-2xl border border-slate-700/70 bg-slate-950/40 p-6">
+            <div className="text-xs uppercase tracking-[0.16em] text-slate-500">Implied share price</div>
             <div
-              className="text-4xl font-bold font-mono"
+              className="mt-2 font-mono text-4xl font-semibold tracking-[-0.03em]"
               style={{ color: upside >= 0 ? '#2dd4bf' : '#f87171' }}
             >
               {metrics.currentPrice < 100
                 ? `${info.currency} ${result.impliedPrice.toFixed(2)}`
                 : `${info.currency} ${Math.round(result.impliedPrice).toLocaleString()}`}
             </div>
-            <div
-              className="text-sm font-mono mt-2"
-              style={{ color: upside >= 0 ? '#4ade80' : '#f87171' }}
-            >
-              {upside >= 0 ? '+' : ''}{upside.toFixed(1)}%{' '}
-              {upside >= 0 ? 'upside' : 'downside'} vs. current{' '}
-              {info.currency} {metrics.currentPrice.toLocaleString()}
+            <div className="mt-2 font-mono text-sm" style={{ color: upside >= 0 ? '#4ade80' : '#f87171' }}>
+              {upside >= 0 ? '+' : ''}{upside.toFixed(1)}% {upside >= 0 ? 'upside' : 'downside'} vs current {info.currency} {metrics.currentPrice.toLocaleString()}
             </div>
           </div>
 
-          {/* Reverse DCF */}
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-5">
-            <h4 className="text-sm font-semibold text-blue-400 mb-2">Reverse DCF — What's Priced In?</h4>
-            <div className="text-2xl font-bold font-mono text-blue-300">~{impliedCAGR.toFixed(0)}% Revenue CAGR</div>
-            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-              The market is pricing in approximately{' '}
-              <strong className="text-blue-300">{impliedCAGR.toFixed(0)}% revenue CAGR</strong> over 7 years to justify{' '}
-              {info.currency} {metrics.currentPrice.toLocaleString()} at {wacc}% WACC and {fcfMargin}% FCF margin.
+          <div className="rounded-2xl border border-blue-500/25 bg-blue-500/10 p-5">
+            <h4 className="mb-2 text-sm font-semibold text-blue-300">Reverse DCF: what is priced in?</h4>
+            <div className="font-mono text-2xl font-bold text-blue-200">~{impliedCAGR.toFixed(0)}% revenue CAGR</div>
+            <p className="mt-2 text-xs leading-5 text-slate-400">
+              The current market price implies roughly this 7-year revenue growth rate at {wacc}% WACC and {fcfMargin}% FCF margin.
             </p>
           </div>
 
-          {/* Scenario Comparison */}
           <div className="grid grid-cols-3 gap-3">
             {scenarioPrices.map(({ key, label, price, pct }) => (
               <div
                 key={key}
-                className={`bg-slate-800/60 rounded-xl p-4 text-center border ${
+                className={`rounded-2xl border bg-slate-950/35 p-4 text-center ${
                   key === 'bull'
                     ? 'border-emerald-500/20'
                     : key === 'base'
@@ -286,94 +273,85 @@ export default function DCFValuation({ info, metrics }: Props) {
                     : 'border-red-500/20'
                 }`}
               >
-                <div
-                  className="text-xs uppercase tracking-wider mb-1 font-semibold"
-                  style={{ color: key === 'bull' ? '#4ade80' : key === 'base' ? '#60a5fa' : '#f87171' }}
-                >
-                  {label}
+                <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
+                <div className="font-mono text-lg font-bold text-slate-100">
+                  {metrics.currentPrice < 100 ? price.toFixed(2) : Math.round(price).toLocaleString()}
                 </div>
-                <div
-                  className="text-lg font-bold font-mono"
-                  style={{ color: key === 'bull' ? '#4ade80' : key === 'base' ? '#60a5fa' : '#f87171' }}
-                >
-                  {metrics.currentPrice < 100
-                    ? price.toFixed(2)
-                    : Math.round(price).toLocaleString()}
-                </div>
-                <div
-                  className="text-xs font-mono mt-1"
-                  style={{ color: key === 'bull' ? '#4ade80' : key === 'base' ? '#60a5fa' : '#f87171' }}
-                >
+                <div className={`mt-1 font-mono text-xs ${pct >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
                   {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Projection Table */}
-          <div className="overflow-x-auto bg-slate-800/60 border border-slate-700 rounded-xl">
+          <div className="overflow-x-auto rounded-2xl border border-slate-700/70 bg-slate-950/40">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-slate-700">
-                  <th className="text-left p-3 text-slate-400 font-semibold uppercase tracking-wider bg-slate-800/80">
-                    Metric
-                  </th>
-                  {projYears.map(y => (
-                    <th
-                      key={y}
-                      className="p-3 text-right text-slate-400 font-semibold uppercase tracking-wider bg-slate-800/80 whitespace-nowrap"
-                    >
-                      {y}
+                  <th className="bg-slate-900/80 p-3 text-left font-semibold uppercase tracking-[0.16em] text-slate-400">Metric</th>
+                  {projYears.map((year) => (
+                    <th key={year} className="whitespace-nowrap bg-slate-900/80 p-3 text-right font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      {year}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-slate-800 hover:bg-slate-700/30 transition-colors">
-                  <td className="p-3 font-semibold text-white">Revenue</td>
-                  {result.projRevenues.map((r, i) => (
-                    <td key={i} className="p-3 text-right font-mono text-slate-300 whitespace-nowrap">
-                      {formatCap(r, info.currency)}
-                    </td>
-                  ))}
-                </tr>
-                <tr className="border-b border-slate-800 hover:bg-slate-700/30 transition-colors">
-                  <td className="p-3 font-semibold text-white">Free Cash Flow</td>
-                  {result.projFCFs.map((f, i) => (
-                    <td key={i} className="p-3 text-right font-mono text-slate-300 whitespace-nowrap">
-                      {formatCap(f, info.currency)}
-                    </td>
-                  ))}
-                </tr>
-                <tr className="hover:bg-slate-700/30 transition-colors">
-                  <td className="p-3 font-semibold text-white">PV of FCF</td>
-                  {result.discountedFCFs.map((d, i) => (
-                    <td key={i} className="p-3 text-right font-mono whitespace-nowrap" style={{ color: '#2dd4bf' }}>
-                      {formatCap(d, info.currency)}
-                    </td>
-                  ))}
-                </tr>
+                <ProjectionRow label="Revenue" values={result.projRevenues.map((r) => formatCap(r, info.currency))} />
+                <ProjectionRow label="Free Cash Flow" values={result.projFCFs.map((f) => formatCap(f, info.currency))} />
+                <ProjectionRow label="PV of FCF" values={result.discountedFCFs.map((d) => formatCap(d, info.currency))} accent />
               </tbody>
             </table>
           </div>
 
-          {/* Summary Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: 'PV of FCFs', value: formatCap(result.pvFCF, info.currency), color: '#2dd4bf' },
-              { label: 'PV of Terminal Value', value: formatCap(result.pvTerminal, info.currency), color: '#60a5fa' },
-              { label: 'Equity Value', value: formatCap(result.pvFCF + result.pvTerminal - netDebt, info.currency), color: '#a78bfa' },
-              { label: 'Implied Price', value: metrics.currentPrice < 100 ? `${info.currency} ${result.impliedPrice.toFixed(2)}` : `${info.currency} ${Math.round(result.impliedPrice).toLocaleString()}`, color: upside >= 0 ? '#4ade80' : '#f87171' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="bg-slate-800/60 border border-slate-700 rounded-xl p-3">
-                <div className="text-xs text-slate-500 mb-1">{label}</div>
-                <div className="text-sm font-bold font-mono whitespace-nowrap overflow-hidden text-ellipsis" style={{ color }}>
-                  {value}
-                </div>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <SummaryStat label="PV of FCFs" value={formatCap(result.pvFCF, info.currency)} />
+            <SummaryStat label="PV of Terminal Value" value={formatCap(result.pvTerminal, info.currency)} />
+            <SummaryStat label="Equity Value" value={formatCap(result.pvFCF + result.pvTerminal - netDebt, info.currency)} />
+            <SummaryStat
+              label="Implied Price"
+              value={metrics.currentPrice < 100 ? `${info.currency} ${result.impliedPrice.toFixed(2)}` : `${info.currency} ${Math.round(result.impliedPrice).toLocaleString()}`}
+              positive={upside >= 0}
+            />
           </div>
         </div>
+      </div>
+
+      <p className="mt-5 rounded-2xl border border-slate-700/70 bg-slate-950/35 px-4 py-3 text-xs leading-5 text-slate-500">
+        Assumption note: base revenue, shares outstanding, and net debt are estimated from available dashboard metrics when full statement data is unavailable.
+      </p>
+    </DashboardSection>
+  );
+}
+
+function InputMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="font-mono text-sm text-slate-300">{value}</div>
+    </div>
+  );
+}
+
+function ProjectionRow({ label, values, accent = false }: { label: string; values: string[]; accent?: boolean }) {
+  return (
+    <tr className="border-b border-slate-800 last:border-0 hover:bg-slate-800/30">
+      <td className="p-3 font-semibold text-slate-50">{label}</td>
+      {values.map((value, i) => (
+        <td key={`${label}-${i}`} className={`whitespace-nowrap p-3 text-right font-mono ${accent ? 'text-cyan-300' : 'text-slate-300'}`}>
+          {value}
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+function SummaryStat({ label, value, positive }: { label: string; value: string; positive?: boolean }) {
+  return (
+    <div className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3">
+      <div className="mb-1 text-xs text-slate-500">{label}</div>
+      <div className={`truncate font-mono text-sm font-bold ${positive === undefined ? 'text-slate-200' : positive ? 'text-emerald-300' : 'text-red-300'}`}>
+        {value}
       </div>
     </div>
   );

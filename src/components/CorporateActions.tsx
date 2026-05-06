@@ -1,6 +1,7 @@
 'use client';
 
 import { CorporateAction } from '@/types/stock';
+import DashboardSection from '@/components/DashboardSection';
 
 interface CorporateActionsProps {
   actions: CorporateAction[];
@@ -10,104 +11,105 @@ export default function CorporateActions({ actions }: CorporateActionsProps) {
   const getStatusStyles = (status: string) => {
     switch (status) {
       case 'completed':
-        return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+        return 'bg-emerald-500/14 text-emerald-300 border-emerald-500/25';
       case 'upcoming':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+        return 'bg-blue-500/14 text-blue-300 border-blue-500/25';
       case 'cancelled':
-        return 'bg-red-500/20 text-red-400 border-red-500/30';
+        return 'bg-red-500/14 text-red-300 border-red-500/25';
       default:
-        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+        return 'bg-slate-700/45 text-slate-300 border-slate-600/50';
     }
   };
-  
+
   const getImportanceStyles = (importance: string) => {
     switch (importance) {
       case 'high':
-        return 'bg-red-500/10 border-l-red-500';
+        return 'border-red-500/30 bg-red-500/8';
       case 'medium':
-        return 'bg-amber-500/10 border-l-amber-500';
+        return 'border-amber-500/30 bg-amber-500/8';
       default:
-        return 'bg-slate-500/10 border-l-slate-500';
+        return 'border-slate-700/70 bg-slate-950/35';
     }
   };
-  
-  const getTypeIcon = (type: string) => {
+
+  const getTypeLabel = (type: string) => {
     switch (type) {
-      case 'AGM': return '🏛️';
-      case 'EGM': return '📋';
-      case 'Rights Issue': return '📈';
-      case 'Bonus Issue': return '🎁';
-      case 'Stock Split': return '✂️';
-      case 'Earnings Release': return '📊';
-      case 'Board Meeting': return '👥';
-      default: return '📌';
+      case 'AGM':
+        return 'AGM';
+      case 'EGM':
+        return 'EGM';
+      case 'Rights Issue':
+        return 'RI';
+      case 'Bonus Issue':
+        return 'BI';
+      case 'Stock Split':
+        return 'SS';
+      case 'Earnings Release':
+        return 'ER';
+      case 'Board Meeting':
+        return 'BM';
+      default:
+        return 'CA';
     }
   };
-  
-  // Sort actions: upcoming first, then by date
+
   const sortedActions = [...actions].sort((a, b) => {
     if (a.status === 'upcoming' && b.status !== 'upcoming') return -1;
     if (b.status === 'upcoming' && a.status !== 'upcoming') return 1;
     return new Date(b.date).getTime() - new Date(a.date).getTime();
   });
-  
+
   return (
-    <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 shadow-xl border border-slate-700/50">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 bg-orange-500/20 rounded-xl flex items-center justify-center">
-          <span className="text-xl">📅</span>
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-white">Corporate Actions</h3>
-          <p className="text-slate-400 text-sm">Important company events and announcements</p>
-        </div>
-      </div>
-      
+    <DashboardSection
+      title="Corporate actions"
+      eyebrow="Events"
+      description="Board meetings, earnings releases, rights issues, and other events that can change the investment case."
+      tone="quiet"
+    >
       {sortedActions.length === 0 ? (
-        <div className="text-center py-8">
-          <div className="text-4xl mb-3">📭</div>
-          <p className="text-slate-400">No corporate actions available</p>
+        <div className="rounded-2xl border border-dashed border-slate-700/80 bg-slate-950/35 px-5 py-8 text-center">
+          <p className="font-medium text-slate-300">No corporate actions available</p>
+          <p className="mt-1 text-sm text-slate-500">New filings and company events will appear here when available.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-3">
           {sortedActions.map((action) => (
-            <div 
+            <article
               key={action.id}
-              className={`p-4 rounded-xl border-l-4 ${getImportanceStyles(action.importance)} bg-slate-800/50`}
+              className={`rounded-2xl border p-4 ${getImportanceStyles(action.importance)}`}
             >
-              <div className="flex items-start gap-3">
-                <span className="text-2xl">{getTypeIcon(action.type)}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="flex items-start gap-4">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700/70 bg-slate-950/45 font-mono text-xs font-bold text-slate-300">
+                  {getTypeLabel(action.type)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <span className="text-xs text-slate-500 uppercase tracking-wide">{action.type}</span>
-                      <h4 className="text-white font-semibold">{action.title}</h4>
+                      <span className="text-xs uppercase tracking-[0.16em] text-slate-500">{action.type}</span>
+                      <h4 className="mt-1 font-semibold text-slate-50">{action.title}</h4>
                     </div>
-                    <span className={`px-2 py-1 rounded-lg text-xs font-medium border capitalize whitespace-nowrap ${getStatusStyles(action.status)}`}>
+                    <span className={`w-fit rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${getStatusStyles(action.status)}`}>
                       {action.status}
                     </span>
                   </div>
-                  
-                  <p className="text-slate-400 text-sm mb-2">{action.description}</p>
-                  
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className="text-slate-500">
-                      📆 {action.date}
-                    </span>
+
+                  <p className="mt-3 text-sm leading-6 text-slate-400">{action.description}</p>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                    <span className="font-mono text-slate-500">{action.date}</span>
                     <span className={`capitalize ${
-                      action.importance === 'high' ? 'text-red-400' :
-                      action.importance === 'medium' ? 'text-amber-400' : 'text-slate-400'
+                      action.importance === 'high' ? 'text-red-300' :
+                      action.importance === 'medium' ? 'text-amber-300' : 'text-slate-400'
                     }`}>
                       {action.importance} priority
                     </span>
                   </div>
                 </div>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       )}
-    </div>
+    </DashboardSection>
   );
 }
-

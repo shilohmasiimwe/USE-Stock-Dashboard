@@ -2,6 +2,7 @@
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { StockInfo, StockMetrics } from '@/types/stock';
+import DashboardSection from '@/components/DashboardSection';
 
 interface Props {
   info: StockInfo;
@@ -17,6 +18,12 @@ interface PeerEntry {
   revGrowth: number;
   marketCap: string;
   fcfYield: number;
+}
+
+interface TooltipPayload {
+  fill?: string;
+  value?: number;
+  name?: string;
 }
 
 const ALL_PEERS: Record<string, PeerEntry[]> = {
@@ -61,25 +68,25 @@ const ALL_PEERS: Record<string, PeerEntry[]> = {
 
 const CHART_COLORS = ['#2dd4bf', '#60a5fa', '#f87171', '#fb923c', '#a78bfa', '#fbbf24'];
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs">
-        <p className="font-semibold text-white mb-1">{label}</p>
-        {payload.map((entry: any, i: number) => (
-          <p key={i} style={{ color: entry.fill }}>{entry.value?.toFixed(1)}{entry.name?.includes('Yield') || entry.name?.includes('Margin') || entry.name?.includes('Growth') ? '%' : 'x'}</p>
-        ))}
-      </div>
-    );
-  }
-  return null;
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: TooltipPayload[]; label?: string }) => {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs">
+      <p className="mb-1 font-semibold text-slate-50">{label}</p>
+      {payload.map((entry, i) => (
+        <p key={`${label}-${i}`} style={{ color: entry.fill }}>
+          {entry.value?.toFixed(1)}
+          {entry.name?.includes('Yield') || entry.name?.includes('Margin') || entry.name?.includes('Growth') ? '%' : 'x'}
+        </p>
+      ))}
+    </div>
+  );
 };
 
 export default function ComparableAnalysis({ info, metrics }: Props) {
   const sectorPeers = ALL_PEERS[info.sector] ?? [];
-
-  // Ensure current ticker is in the list
-  const hasCurrent = sectorPeers.some(p => p.ticker === info.ticker);
+  const hasCurrent = sectorPeers.some((p) => p.ticker === info.ticker);
   const currentEntry: PeerEntry = {
     ticker: info.ticker,
     name: info.name,
@@ -111,59 +118,49 @@ export default function ComparableAnalysis({ info, metrics }: Props) {
   }));
 
   return (
-    <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 shadow-xl border border-slate-700/50">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-1.5 h-7 bg-purple-500 rounded-full" />
-        <div>
-          <h2 className="text-xl font-bold text-white">Comparable Company Analysis</h2>
-          <p className="text-xs text-slate-500 uppercase tracking-wider">{info.sector} Peers · Uganda &amp; East Africa</p>
-        </div>
-      </div>
-
-      {/* Comp Table */}
-      <div className="overflow-x-auto rounded-xl border border-slate-700 mb-6">
+    <DashboardSection
+      title="Comparable company analysis"
+      eyebrow={`${info.sector} peers | Uganda and East Africa`}
+      description="Peer multiples are directional benchmarks. Use them to spot outliers before reading filings and sector notes."
+      tone="quiet"
+    >
+      <div className="mb-6 overflow-x-auto rounded-2xl border border-slate-700/70">
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-slate-800 border-b border-slate-700">
-              <th className="text-left p-3 text-slate-400 font-semibold uppercase tracking-wider whitespace-nowrap">Company</th>
-              <th className="text-right p-3 text-slate-400 font-semibold uppercase tracking-wider">P/E</th>
-              <th className="text-right p-3 text-slate-400 font-semibold uppercase tracking-wider whitespace-nowrap">Div. Yield</th>
-              <th className="text-right p-3 text-slate-400 font-semibold uppercase tracking-wider whitespace-nowrap">Gross Margin</th>
-              <th className="text-right p-3 text-slate-400 font-semibold uppercase tracking-wider whitespace-nowrap">Rev. Growth</th>
-              <th className="text-right p-3 text-slate-400 font-semibold uppercase tracking-wider whitespace-nowrap">FCF Yield</th>
-              <th className="text-right p-3 text-slate-400 font-semibold uppercase tracking-wider whitespace-nowrap">Mkt Cap</th>
+            <tr className="border-b border-slate-700 bg-slate-900/80">
+              <th className="whitespace-nowrap p-3 text-left font-semibold uppercase tracking-[0.16em] text-slate-400">Company</th>
+              <th className="p-3 text-right font-semibold uppercase tracking-[0.16em] text-slate-400">P/E</th>
+              <th className="whitespace-nowrap p-3 text-right font-semibold uppercase tracking-[0.16em] text-slate-400">Div. Yield</th>
+              <th className="whitespace-nowrap p-3 text-right font-semibold uppercase tracking-[0.16em] text-slate-400">Gross Margin</th>
+              <th className="whitespace-nowrap p-3 text-right font-semibold uppercase tracking-[0.16em] text-slate-400">Rev. Growth</th>
+              <th className="whitespace-nowrap p-3 text-right font-semibold uppercase tracking-[0.16em] text-slate-400">FCF Yield</th>
+              <th className="whitespace-nowrap p-3 text-right font-semibold uppercase tracking-[0.16em] text-slate-400">Mkt Cap</th>
             </tr>
           </thead>
           <tbody>
-            {peers.map(peer => {
+            {peers.map((peer) => {
               const isCurrent = peer.ticker === info.ticker;
               return (
                 <tr
                   key={peer.ticker}
-                  className={`border-b border-slate-800 transition-colors ${
+                  className={`border-b border-slate-800 transition-colors last:border-0 ${
                     isCurrent ? 'bg-cyan-500/5' : 'hover:bg-slate-800/50'
                   }`}
                 >
-                  <td className={`p-3 font-semibold whitespace-nowrap ${isCurrent ? 'text-cyan-400' : 'text-white'}`}>
-                    <span className={`inline-block px-2 py-0.5 rounded text-xs mr-2 font-bold ${isCurrent ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-700 text-slate-300'}`}>
+                  <td className={`whitespace-nowrap p-3 font-semibold ${isCurrent ? 'text-cyan-300' : 'text-slate-50'}`}>
+                    <span className={`mr-2 inline-block rounded px-2 py-0.5 text-xs font-bold ${isCurrent ? 'bg-cyan-500/20 text-cyan-300' : 'bg-slate-800 text-cyan-50'}`}>
                       {peer.ticker}
                     </span>
-                    <span className="text-slate-400 font-normal">{peer.name}</span>
-                    {isCurrent && (
-                      <span className="ml-2 text-xs text-cyan-500 font-normal">(You)</span>
-                    )}
+                    <span className="font-normal text-slate-400">{peer.name}</span>
+                    {isCurrent && <span className="ml-2 text-xs font-normal text-cyan-400">(Selected)</span>}
                   </td>
                   <td className="p-3 text-right font-mono text-slate-300">{peer.peRatio.toFixed(1)}x</td>
-                  <td className="p-3 text-right font-mono text-emerald-400">{peer.dividendYield.toFixed(1)}%</td>
+                  <td className="p-3 text-right font-mono text-emerald-300">{peer.dividendYield.toFixed(1)}%</td>
                   <td className="p-3 text-right font-mono text-slate-300">{peer.grossMargin.toFixed(1)}%</td>
-                  <td
-                    className="p-3 text-right font-mono"
-                    style={{ color: peer.revGrowth >= 0 ? '#4ade80' : '#f87171' }}
-                  >
+                  <td className={`p-3 text-right font-mono ${peer.revGrowth >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
                     {peer.revGrowth >= 0 ? '+' : ''}{peer.revGrowth.toFixed(1)}%
                   </td>
-                  <td className="p-3 text-right font-mono text-cyan-400">{peer.fcfYield.toFixed(1)}%</td>
+                  <td className="p-3 text-right font-mono text-cyan-300">{peer.fcfYield.toFixed(1)}%</td>
                   <td className="p-3 text-right font-mono text-slate-400">{peer.marketCap}</td>
                 </tr>
               );
@@ -172,36 +169,19 @@ export default function ComparableAnalysis({ info, metrics }: Props) {
         </table>
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
         {[
           { title: 'P/E Ratio', data: peData, valueSuffix: 'x', dataKey: 'value' },
           { title: 'Dividend Yield (%)', data: divData, valueSuffix: '%', dataKey: 'value' },
           { title: 'Gross Margin (%)', data: gmData, valueSuffix: '%', dataKey: 'value' },
         ].map(({ title, data, valueSuffix, dataKey }) => (
-          <div key={title} className="bg-slate-800/60 border border-slate-700 rounded-xl p-4">
-            <h4 className="text-sm font-semibold text-slate-400 mb-4">{title}</h4>
+          <div key={title} className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-4">
+            <h4 className="mb-4 text-sm font-semibold text-slate-400">{title}</h4>
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={data} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 10, fill: '#8b8fa6' }}
-                  tickFormatter={v => `${v}${valueSuffix}`}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="ticker"
-                  tick={{ fontSize: 10, fill: '#94a3b8' }}
-                  width={50}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  content={<CustomTooltip />}
-                  cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                />
+                <XAxis type="number" tick={{ fontSize: 10, fill: '#8b8fa6' }} tickFormatter={(v) => `${v}${valueSuffix}`} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="ticker" tick={{ fontSize: 10, fill: '#94a3b8' }} width={50} axisLine={false} tickLine={false} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                 <Bar dataKey={dataKey} radius={[0, 4, 4, 0]}>
                   {data.map((entry, i) => (
                     <Cell key={`cell-${i}`} fill={entry.fill} />
@@ -213,20 +193,19 @@ export default function ComparableAnalysis({ info, metrics }: Props) {
         ))}
       </div>
 
-      {/* Sector average callout */}
-      <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
           { label: 'Sector Avg P/E', value: `${(peers.reduce((s, p) => s + p.peRatio, 0) / peers.length).toFixed(1)}x` },
           { label: 'Sector Avg Div Yield', value: `${(peers.reduce((s, p) => s + p.dividendYield, 0) / peers.length).toFixed(1)}%` },
           { label: 'Sector Avg Gross Margin', value: `${(peers.reduce((s, p) => s + p.grossMargin, 0) / peers.length).toFixed(1)}%` },
           { label: 'Sector Avg Rev Growth', value: `${(peers.reduce((s, p) => s + p.revGrowth, 0) / peers.length).toFixed(1)}%` },
         ].map(({ label, value }) => (
-          <div key={label} className="bg-slate-800/40 border border-slate-700 rounded-xl p-3 text-center">
-            <div className="text-xs text-slate-500 mb-1">{label}</div>
-            <div className="text-sm font-bold font-mono text-slate-300">{value}</div>
+          <div key={label} className="rounded-2xl border border-slate-700/70 bg-slate-950/35 p-3 text-center">
+            <div className="mb-1 text-xs text-slate-500">{label}</div>
+            <div className="font-mono text-sm font-bold text-slate-200">{value}</div>
           </div>
         ))}
       </div>
-    </div>
+    </DashboardSection>
   );
 }

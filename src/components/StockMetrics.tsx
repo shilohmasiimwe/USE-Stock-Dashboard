@@ -1,6 +1,7 @@
 'use client';
 
 import { StockInfo, StockMetrics as StockMetricsType } from '@/types/stock';
+import DashboardSection from '@/components/DashboardSection';
 
 interface StockMetricsProps {
   info: StockInfo;
@@ -9,62 +10,63 @@ interface StockMetricsProps {
 
 export default function StockMetrics({ info, metrics }: StockMetricsProps) {
   const isPositive = metrics.change >= 0;
-  
+  const movementLabel = isPositive ? 'Up' : 'Down';
+
   return (
-    <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 shadow-xl border border-slate-700/50">
-      <div className="flex flex-col lg:flex-row lg:items-start gap-6">
-        {/* Stock Header */}
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-lg text-sm font-bold">
-              {info.ticker}
-            </span>
-            <span className="px-3 py-1 bg-slate-700/50 text-slate-300 rounded-lg text-xs">
-              {info.sector}
-            </span>
-          </div>
-          <h3 className="text-2xl font-bold text-white mb-2">{info.name}</h3>
-          <p className="text-slate-400 text-sm">{info.description}</p>
-        </div>
-        
-        {/* Current Price */}
-        <div className="text-right">
-          <div className="text-4xl font-bold text-white mb-1">
-            {info.currency} {metrics.currentPrice.toLocaleString()}
-          </div>
-          <div className={`flex items-center justify-end gap-2 ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
-            <span className="text-xl font-semibold">
-              {isPositive ? '+' : ''}{metrics.change.toLocaleString()}
-            </span>
-            <span className="px-2 py-1 rounded-lg text-sm font-bold bg-opacity-20" 
-                  style={{ backgroundColor: isPositive ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)' }}>
-              {isPositive ? '▲' : '▼'} {Math.abs(metrics.changePercent).toFixed(2)}%
-            </span>
+    <DashboardSection
+      title={info.name}
+      eyebrow={`${info.ticker} | ${info.sector}`}
+      description={info.description}
+      tone="market"
+      headerAction={
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/8 px-4 py-3 text-right">
+          <div className="text-xs uppercase tracking-[0.16em] text-emerald-200/75">Last updated</div>
+          <div className="mt-1 font-mono text-sm text-slate-100">
+            {new Date(metrics.lastUpdated).toLocaleDateString()}
           </div>
         </div>
+      }
+    >
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current price</p>
+          <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-2">
+            <div className="font-mono text-4xl font-semibold tracking-[-0.03em] text-slate-50 md:text-5xl">
+              {info.currency} {metrics.currentPrice.toLocaleString()}
+            </div>
+            <div className={`mb-1 flex items-center gap-2 ${isPositive ? 'text-emerald-300' : 'text-red-300'}`}>
+              <span className="font-mono text-lg font-semibold">
+                {isPositive ? '+' : ''}{metrics.change.toLocaleString()}
+              </span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${isPositive ? 'bg-emerald-500/16' : 'bg-red-500/16'}`}>
+                {movementLabel} {Math.abs(metrics.changePercent).toFixed(2)}%
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:min-w-[560px]">
+          <MetricCard label="52W High" value={`${info.currency} ${metrics.high52Week.toLocaleString()}`} />
+          <MetricCard label="52W Low" value={`${info.currency} ${metrics.low52Week.toLocaleString()}`} />
+          <MetricCard label="Market Cap" value={metrics.marketCap} />
+          <MetricCard label="Volume" value={metrics.volume.toLocaleString()} />
+          <MetricCard label="Avg Volume" value={metrics.avgVolume.toLocaleString()} />
+          <MetricCard label="P/E Ratio" value={metrics.peRatio.toFixed(1)} />
+          <MetricCard label="Dividend Yield" value={`${metrics.dividendYield.toFixed(1)}%`} highlight />
+          <MetricCard label="Ticker" value={info.ticker} />
+        </div>
       </div>
-      
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-700/50">
-        <MetricCard label="52W High" value={`${info.currency} ${metrics.high52Week.toLocaleString()}`} />
-        <MetricCard label="52W Low" value={`${info.currency} ${metrics.low52Week.toLocaleString()}`} />
-        <MetricCard label="Market Cap" value={metrics.marketCap} />
-        <MetricCard label="Volume" value={metrics.volume.toLocaleString()} />
-        <MetricCard label="Avg Volume" value={metrics.avgVolume.toLocaleString()} />
-        <MetricCard label="P/E Ratio" value={metrics.peRatio.toFixed(1)} />
-        <MetricCard label="Dividend Yield" value={`${metrics.dividendYield.toFixed(1)}%`} highlight />
-        <MetricCard label="Last Updated" value={new Date(metrics.lastUpdated).toLocaleDateString()} />
-      </div>
-    </div>
+    </DashboardSection>
   );
 }
 
 function MetricCard({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <div className={`p-3 rounded-xl ${highlight ? 'bg-emerald-500/10 border border-emerald-500/30' : 'bg-slate-800/50'}`}>
-      <div className="text-slate-400 text-xs mb-1">{label}</div>
-      <div className={`font-semibold ${highlight ? 'text-emerald-400' : 'text-white'}`}>{value}</div>
+    <div className={`rounded-2xl border p-3 ${highlight ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-slate-800/80 bg-slate-950/35'}`}>
+      <div className="mb-1 text-xs text-slate-500">{label}</div>
+      <div className={`truncate font-mono text-sm font-semibold ${highlight ? 'text-emerald-300' : 'text-slate-100'}`}>
+        {value}
+      </div>
     </div>
   );
 }
-

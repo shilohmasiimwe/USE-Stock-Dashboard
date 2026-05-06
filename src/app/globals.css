@@ -1,11 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0f1a;
-  --foreground: #e2e8f0;
-  --accent: #14b8a6;
-  --accent-strong: #0f766e;
-  --accent-warm: #f59e0b;
+  --background: oklch(15% 0.018 248);
+  --foreground: oklch(91% 0.018 248);
+  --accent: oklch(70% 0.14 174);
+  --accent-strong: oklch(50% 0.12 174);
+  --accent-warm: oklch(76% 0.14 73);
+  --ease-out-ui: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-ui: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -51,7 +57,31 @@ h4 {
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.5s ease forwards;
+  animation: fadeIn 0.34s var(--ease-out-ui) forwards;
+}
+
+.dashboard-section {
+  backdrop-filter: saturate(120%);
+}
+
+.pressable {
+  transition:
+    transform 150ms var(--ease-out-ui),
+    border-color 150ms var(--ease-out-ui),
+    background-color 150ms var(--ease-out-ui),
+    color 150ms var(--ease-out-ui);
+}
+
+.pressable:active {
+  transform: scale(0.98);
+}
+
+.focus-ring {
+  outline: none;
+}
+
+.focus-ring:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 35%, transparent);
 }
 
 /* Custom scrollbar for the whole page */
@@ -75,7 +105,7 @@ h4 {
 /* Selection color */
 ::selection {
   background: rgba(16, 185, 129, 0.3);
-  color: white;
+  color: oklch(96% 0.012 174);
 }
 
 /* Line clamp utility */
@@ -111,4 +141,15 @@ h4 {
   border-radius: 9999px;
   transition: width 500ms ease;
   width: var(--bar-w, 0%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
