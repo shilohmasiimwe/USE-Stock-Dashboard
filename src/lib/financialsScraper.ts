@@ -1,5 +1,6 @@
 import { USE_STOCKS, FinancialDocument, FinancialFigure } from '@/types/stock';
 import { getCachedFinancials, setCachedFinancials } from './redis';
+import { extractWithScrapeGraph } from './scrapeGraphAi';
 
 export interface FinancialsSnapshot {
   updatedAt: string;
@@ -11,6 +12,9 @@ export interface FinancialsSnapshot {
 const SOURCE_URL = 'https://africanfinancials.com/uganda-listed-company-documents/';
 const MAX_PAGES = 6;
 const FINANCIALS_CACHE_TTL_HOURS = 24;
+const abortSignalWithTimeout = AbortSignal as typeof AbortSignal & {
+  timeout?: (milliseconds: number) => AbortSignal;
+};
 
 const AFRICAN_TICKER_MAP: Record<string, string> = {
   MTN: 'MTN',
@@ -46,10 +50,71 @@ const COMPANY_ALIASES: Record<string, string[]> = {
 
 const FETCH_OPTS: RequestInit = {
   headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
-  ...(typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal
-    ? { signal: (AbortSignal as any).timeout(8_000) }
+  ...(typeof AbortSignal !== 'undefined' && typeof abortSignalWithTimeout.timeout === 'function'
+    ? { signal: abortSignalWithTimeout.timeout(8_000) }
     : {}),
 };
+
+type ExtractedFinancialDocument = {
+  ticker?: string;
+  company?: string;
+  title?: string;
+  url?: string;
+  documentType?: string;
+  publishedAt?: string;
+  year?: number | string;
+  period?: string;
+  sector?: string;
+  summary?: string;
+  figures?: Array<{
+    label?: string;
+    value?: number | string | null;
+    currency?: string;
+    unit?: string;
+    raw?: string;
+  }>;
+};
+
+type ExtractedFinancialsPayload = {
+  documents?: ExtractedFinancialDocument[];
+};
+
+const FINANCIALS_EXTRACTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    documents: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          ticker: { type: 'string' },
+          company: { type: 'string' },
+          title: { type: 'string' },
+          url: { type: 'string' },
+          documentType: { type: 'string' },
+          publishedAt: { type: 'string' },
+          year: { type: ['number', 'null'] },
+          period: { type: 'string' },
+          sector: { type: 'string' },
+          summary: { type: 'string' },
+          figures: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                label: { type: 'string' },
+                value: { type: ['number', 'null'] },
+                currency: { type: 'string' },
+                unit: { type: 'string' },
+                raw: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
 
 let financialsCache: FinancialsSnapshot | null = null;
 let lastUpdate: Date | null = null;
@@ -75,6 +140,12 @@ const decodeEntities = (value: string) =>
 
 const stripTags = (value: string) =>
   decodeEntities(value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim());
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isExtractedFinancialsPayload = (value: unknown): value is ExtractedFinancialsPayload =>
+  isRecord(value) && (value.documents === undefined || Array.isArray(value.documents));
 
 const isFresh = (maxHours = FINANCIALS_CACHE_TTL_HOURS) =>
   !!lastUpdate && (Date.now() - lastUpdate.getTime()) / 3_600_000 < maxHours;
@@ -201,6 +272,60 @@ function extractDocumentsFromHtml(html: string): Omit<FinancialDocument, 'ticker
   return results;
 }
 
+async function extractDocumentsWithScrapeGraph(sourceUrl: string): Promise<Omit<FinancialDocument, 'ticker'>[]> {
+  const extraction = await extractWithScrapeGraph<ExtractedFinancialsPayload>({
+    url: sourceUrl,
+    prompt: 'Extract Uganda-listed company financial documents. Return each document title, company, ticker if present, URL, document type, published date, year, period, sector, short summary, and any financial figures mentioned with label, value, currency, unit, and raw text.',
+    outputSchema: FINANCIALS_EXTRACTION_SCHEMA,
+    fetchConfig: {
+      mode: 'auto',
+      wait: 3000,
+      timeout: 15000,
+    },
+    validate: isExtractedFinancialsPayload,
+  });
+
+  if (!extraction.ok) {
+    console.warn(`[financialsScraper] ScrapeGraphAI fallback skipped for ${sourceUrl}: ${extraction.error}`);
+    return [];
+  }
+
+  return (extraction.data.documents ?? []).flatMap((doc): Omit<FinancialDocument, 'ticker'>[] => {
+    if (!doc.title || !doc.url) return [];
+
+    const year = Number(doc.year);
+    const figures = (doc.figures ?? []).flatMap((figure): FinancialFigure[] => {
+      if (!figure.label && !figure.raw) return [];
+      const value = typeof figure.value === 'number'
+        ? figure.value
+        : Number.parseFloat(String(figure.value ?? '').replace(/,/g, ''));
+
+      return [{
+        label: figure.label ?? figure.raw ?? 'Figure',
+        value: Number.isFinite(value) ? value : null,
+        currency: figure.currency,
+        unit: figure.unit,
+        raw: figure.raw ?? `${figure.label ?? 'Figure'}: ${figure.value ?? ''}`.trim(),
+      }];
+    });
+
+    return [{
+      company: (doc.company ?? doc.title.split('(')[0].trim()) || 'Unknown',
+      title: doc.title,
+      url: doc.url,
+      summary: (doc.summary ?? '').slice(0, 700),
+      documentType: doc.documentType,
+      publishedAt: parsePublishedDate(doc.publishedAt),
+      year: Number.isFinite(year) ? year : undefined,
+      period: doc.period,
+      sector: doc.sector,
+      figures,
+      source: 'AfricanFinancials',
+      sourceTicker: doc.ticker?.toUpperCase(),
+    }];
+  });
+}
+
 async function fetchAllDocuments(): Promise<Omit<FinancialDocument, 'ticker'>[]> {
   const allDocs: Omit<FinancialDocument, 'ticker'>[] = [];
   const seen = new Set<string>();
@@ -211,7 +336,10 @@ async function fetchAllDocuments(): Promise<Omit<FinancialDocument, 'ticker'>[]>
     if (!res.ok) break;
 
     const html = await res.text();
-    const docs = extractDocumentsFromHtml(html);
+    const parsedDocs = extractDocumentsFromHtml(html);
+    const docs = parsedDocs.length > 0
+      ? parsedDocs
+      : await extractDocumentsWithScrapeGraph(url);
     let newCount = 0;
 
     for (const doc of docs) {

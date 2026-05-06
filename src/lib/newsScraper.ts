@@ -5,6 +5,7 @@ import {
   setCachedDividends,
   setCachedNews,
 } from './redis';
+import { extractWithScrapeGraph } from './scrapeGraphAi';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -22,6 +23,35 @@ interface RawArticle {
   publishedAt?: string;
   summary?: string;
 }
+
+type RawDividend = {
+  ticker: string;
+  type: string;
+  amount: number;
+  currency: string;
+  exDate: string;
+  recDate: string;
+  payDate: string;
+  status: string;
+  year: number;
+};
+
+type ExtractedDividend = {
+  ticker?: string;
+  company?: string;
+  type?: string;
+  amount?: number | string | null;
+  currency?: string;
+  exDividendDate?: string;
+  recordDate?: string;
+  paymentDate?: string;
+  status?: string;
+  year?: number | string;
+};
+
+type ExtractedDividendsPayload = {
+  dividends?: ExtractedDividend[];
+};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Config
@@ -57,6 +87,30 @@ const DIVIDEND_URLS = [
   'https://www.use.or.ug/content/dividends-announcements',
   'https://africanfinancials.com/uganda-securities-exchange-dividends/',
 ];
+
+const DIVIDEND_EXTRACTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    dividends: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          ticker: { type: 'string' },
+          company: { type: 'string' },
+          type: { type: 'string', enum: ['interim', 'final', 'special', 'unknown'] },
+          amount: { type: ['number', 'null'] },
+          currency: { type: 'string', enum: ['UGX', 'KES', 'USD', 'UNKNOWN'] },
+          exDividendDate: { type: 'string' },
+          recordDate: { type: 'string' },
+          paymentDate: { type: 'string' },
+          status: { type: 'string', enum: ['announced', 'paid', 'upcoming', 'unknown'] },
+          year: { type: ['number', 'null'] },
+        },
+      },
+    },
+  },
+} as const;
 
 const COMPANY_ALIASES: Record<string, string[]> = {
   MTN:   ['mtn uganda', 'mtn group', 'mtn mobile money', 'momo uganda'],
@@ -139,6 +193,92 @@ const matchTicker = (title: string, summary = ''): string[] => {
     .map(s => s.ticker);
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isExtractedDividendsPayload = (value: unknown): value is ExtractedDividendsPayload =>
+  isRecord(value) && (value.dividends === undefined || Array.isArray(value.dividends));
+
+const coerceDate = (value: string | undefined) => {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
+
+  const parts = trimmed.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/);
+  return parts ? `${parts[3]}-${parts[2]}-${parts[1]}` : trimmed;
+};
+
+const normalizeDividendType = (value: string | undefined): RawDividend['type'] => {
+  const normalizedType = normalize(value ?? '');
+  if (normalizedType.includes('interim')) return 'interim';
+  if (normalizedType.includes('special')) return 'special';
+  return 'final';
+};
+
+const normalizeDividendStatus = (value: string | undefined): RawDividend['status'] => {
+  const normalizedStatus = normalize(value ?? '');
+  if (normalizedStatus.includes('paid')) return 'paid';
+  if (normalizedStatus.includes('upcoming')) return 'upcoming';
+  return 'announced';
+};
+
+const normalizeDividendCurrency = (value: string | undefined) => {
+  const currency = (value ?? 'UGX').toUpperCase();
+  return ['UGX', 'KES', 'USD'].includes(currency) ? currency : 'UGX';
+};
+
+async function extractDividendsWithScrapeGraph(sourceUrl: string): Promise<RawDividend[]> {
+  const extraction = await extractWithScrapeGraph<ExtractedDividendsPayload>({
+    url: sourceUrl,
+    prompt: 'Extract dividend announcements for Uganda Securities Exchange listed companies. Return ticker, company, dividend type, amount per share, currency, ex-dividend date, record date, payment date, status, and dividend year. Use ISO YYYY-MM-DD dates where possible.',
+    outputSchema: DIVIDEND_EXTRACTION_SCHEMA,
+    fetchConfig: {
+      mode: 'auto',
+      wait: 3000,
+      timeout: 12000,
+    },
+    validate: isExtractedDividendsPayload,
+  });
+
+  if (!extraction.ok) {
+    console.warn(`[newsScraper] ScrapeGraphAI dividend fallback skipped for ${sourceUrl}: ${extraction.error}`);
+    return [];
+  }
+
+  return (extraction.data.dividends ?? []).flatMap((dividend): RawDividend[] => {
+    const ticker = dividend.ticker?.toUpperCase();
+    if (!ticker || !USE_STOCKS.some(stock => stock.ticker === ticker)) return [];
+
+    const amount = typeof dividend.amount === 'number'
+      ? dividend.amount
+      : Number.parseFloat(String(dividend.amount ?? '').replace(/,/g, ''));
+    if (!Number.isFinite(amount) || amount <= 0) return [];
+
+    const exDate = coerceDate(dividend.exDividendDate);
+    const recDate = coerceDate(dividend.recordDate);
+    const payDate = coerceDate(dividend.paymentDate);
+    const parsedYear = Number(dividend.year);
+    const year = Number.isFinite(parsedYear)
+      ? parsedYear
+      : new Date(exDate || recDate || payDate || Date.now()).getFullYear();
+
+    return [{
+      ticker,
+      type: normalizeDividendType(dividend.type),
+      amount,
+      currency: normalizeDividendCurrency(dividend.currency),
+      exDate,
+      recDate,
+      payDate,
+      status: normalizeDividendStatus(dividend.status),
+      year,
+    }];
+  });
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // RSS parser — pure regex, no external library needed
 // ──────────────────────────────────────────────────────────────────────────────
@@ -203,8 +343,7 @@ function parseHTMLArticles(html: string, baseUrl: string): RawArticle[] {
 
 function parseDividendHtml(html: string) {
   const clean = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
-  type RawDiv = { ticker: string; type: string; amount: number; currency: string; exDate: string; recDate: string; payDate: string; status: string; year: number };
-  const results: RawDiv[] = [];
+  const results: RawDividend[] = [];
 
   for (const row of (clean.match(/<tr[\s\S]*?<\/tr>/gi) ?? [])) {
     const cells = [...row.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(m => stripTags(m[1]).trim());
@@ -402,7 +541,13 @@ export async function refreshDividends(): Promise<Record<string, DividendAnnounc
     try {
       const res = await fetch(url, FETCH_OPTS);
       if (!res.ok) continue;
-      for (const d of parseDividendHtml(await res.text())) {
+      const html = await res.text();
+      const parsedDividends = parseDividendHtml(html);
+      const dividends = parsedDividends.length > 0
+        ? parsedDividends
+        : await extractDividendsWithScrapeGraph(url);
+
+      for (const d of dividends) {
         const div: DividendAnnouncement = {
           id:             hashId(`${d.ticker}-${d.exDate}-${d.amount}`),
           type:           d.type as 'interim' | 'final' | 'special',
