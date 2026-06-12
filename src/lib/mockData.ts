@@ -612,69 +612,70 @@ const stockNews: Record<string, NewsArticle[]> = {
 // Dividend yields recalculated using verified prices.
 // ============================================================================
 const stockMetrics: Record<string, StockMetrics> = {
+  // Source: afx.kwayisi.org/use/ — prices as fetched June 2026
   MTN: {
-    currentPrice: 476.75,
-    change: 0,
-    changePercent: 0.00,
+    currentPrice: 428.00,
+    change: 3.00,
+    changePercent: 0.70,
     high52Week: 510,
     low52Week: 280,
-    marketCap: 'UGX 10.67T',
-    volume: 1100,
+    marketCap: 'UGX 9.58T', // 22.38B shares × UGX 428
+    volume: 1000000,
     avgVolume: 950000,
-    peRatio: 15.73,
-    dividendYield: 4.7, // FY2024 total: UGX 22.60/share (6.60+7.50+8.50) ÷ 476.75
+    peRatio: 14.1, // EPS: UGX 30.31 (FY2024); 428 ÷ 30.31
+    dividendYield: 5.2, // UGX 22.41/share ÷ 428
     lastUpdated: new Date().toISOString()
   },
   AIRTL: {
-    currentPrice: 123.73,
-    change: 0,
-    changePercent: 0.00,
-    high52Week: 135,
+    currentPrice: 152.09,
+    change: 0.09,
+    changePercent: 0.06,
+    high52Week: 160,
     low52Week: 75,
-    marketCap: 'UGX 5.4T',
-    volume: 0,
+    marketCap: 'UGX 6.64T', // 43.64B shares × UGX 152.09
+    volume: 13800,
     avgVolume: 580000,
-    peRatio: 14.9,
-    dividendYield: 6.4, // FY2024 total: UGX 7.88/share ÷ 123.73
+    peRatio: 18.3, // EPS: UGX 8.31 (FY2024); 152.09 ÷ 8.31
+    dividendYield: 5.2, // UGX 7.92/share ÷ 152.09
     lastUpdated: new Date().toISOString()
   },
   SBU: {
-    currentPrice: 80.00,
+    currentPrice: 74.00,
     change: 0,
     changePercent: 0.00,
     high52Week: 85,
     low52Week: 47,
-    marketCap: 'UGX 4.10T',
+    marketCap: 'UGX 3.79T', // 51.25B shares × UGX 74
     volume: 11200,
     avgVolume: 15000,
-    peRatio: 6.93,
-    dividendYield: 7.3, // FY2024 total: UGX 5.86/share (2.73 interim + 3.13 final) ÷ 80.00
+    peRatio: 6.4, // EPS: UGX 11.54 (FY2024); 74 ÷ 11.54
+    dividendYield: 7.9, // UGX 5.84/share ÷ 74
     lastUpdated: new Date().toISOString()
   },
   DFCU: {
-    currentPrice: 307.00,
+    currentPrice: 333.00,
     change: 0,
     changePercent: 0.00,
     high52Week: 380,
     low52Week: 245,
-    marketCap: 'UGX 229.7B',
+    marketCap: 'UGX 249.1B', // 747.9M shares × UGX 333
     volume: 0,
     avgVolume: 98000,
-    peRatio: 3.58,
-    dividendYield: 6.5, // FY2024 final: UGX 20.09/share ÷ 307 (record dividend, +121% vs FY2023)
+    peRatio: 3.9, // EPS: UGX 85.75 (FY2024); 333 ÷ 85.75
+    dividendYield: 6.0, // UGX 19.96/share ÷ 333
     lastUpdated: new Date().toISOString()
   },
   BOBU: {
-    currentPrice: 49.00,
-    change: 0,
+    currentPrice: 54.00,
+    change: 0.00,
     changePercent: 0.00,
     high52Week: 63,
     low52Week: 40,
-    marketCap: 'UGX 735B',
-    volume: 35000,
+    marketCap: 'UGX 810B', // 15B shares × UGX 54
+    volume: 1009900,
     avgVolume: 28000,
-    peRatio: 5.49,
-    dividendYield: 8.2, // FY2024 final: UGX 4.00/share ÷ 49.00 (doubled vs FY2023)
+    peRatio: 6.1, // EPS: UGX 8.93 (FY2024); 54 ÷ 8.93
+    dividendYield: 7.4, // UGX 4.02/share ÷ 54
     lastUpdated: new Date().toISOString()
   },
   EBU: {
@@ -691,29 +692,29 @@ const stockMetrics: Record<string, StockMetrics> = {
     lastUpdated: new Date().toISOString()
   },
   UCL: {
-    currentPrice: 4.50,
+    currentPrice: 6.04,
     change: 0,
     changePercent: 0.00,
     high52Week: 9,
     low52Week: 3,
-    marketCap: 'UGX 4.1B', // ~900M shares × UGX 4.50
+    marketCap: 'UGX 5.5B', // 911M shares × UGX 6.04
     volume: 0,
     avgVolume: 180000,
-    peRatio: 0, // N/A — net loss in FY2024 (EPS: -5.50)
-    dividendYield: 0, // No dividend declared since FY2021 (last paid Jul 2022); net loss in FY2024
+    peRatio: 0, // N/A — net loss FY2024 (EPS: -5.50)
+    dividendYield: 0, // No dividend since FY2021; net loss FY2024
     lastUpdated: new Date().toISOString()
   },
   NVU: {
-    currentPrice: 149.00,
+    currentPrice: 144.00,
     change: 0,
     changePercent: 0.00,
     high52Week: 185,
     low52Week: 115,
-    marketCap: 'UGX 11.4B', // ~76.5M shares × UGX 149
+    marketCap: 'UGX 11.0B', // 76.5M shares × UGX 144
     volume: 0,
     avgVolume: 65000,
-    peRatio: 0, // N/A — net loss in FY2024 (EPS: -132.87)
-    dividendYield: 0, // No dividend since FY2020 (last paid Jan 2021); losses of UGX 10.16B in FY2024
+    peRatio: 0, // N/A — net loss FY2024 (EPS: -132.87)
+    dividendYield: 0, // No dividend since FY2020; losses of UGX 10.16B in FY2024
     lastUpdated: new Date().toISOString()
   },
   NIC: {
@@ -722,11 +723,11 @@ const stockMetrics: Record<string, StockMetrics> = {
     changePercent: 0,
     high52Week: 18,
     low52Week: 5,
-    marketCap: 'UGX 10.6B', // 2.12B shares × UGX 5.00 — confirmed African Financials
+    marketCap: 'UGX 10.6B', // 2.12B shares × UGX 5.00
     volume: 95000,
     avgVolume: 78000,
-    peRatio: 81.8, // EPS: UGX 0.22 — thin profitability; FY2024 net income UGX 477M
-    dividendYield: 0, // No dividend since FY2022 (last paid Sep 2023); FY2023 loss; FY2024 PAT too slim
+    peRatio: 22.7, // EPS: UGX 0.22 (FY2024); 5.00 ÷ 0.22
+    dividendYield: 0, // No dividend since FY2022; FY2024 PAT too slim
     lastUpdated: new Date().toISOString()
   },
   BATU: {
@@ -735,37 +736,37 @@ const stockMetrics: Record<string, StockMetrics> = {
     changePercent: 0.00,
     high52Week: 15000,
     low52Week: 10000,
-    marketCap: 'UGX 613.5B', // ~49.08M shares × UGX 12,500
+    marketCap: 'UGX 613.5B', // 49.08M shares × UGX 12,500
     volume: 8500,
     avgVolume: 7200,
-    peRatio: 59.53, // EPS: UGX 209.99 — FY2024 net income UGX 10.3B
-    dividendYield: 1.7, // FY2024 final: UGX 210/share ÷ 12,500 = 1.68%; FY2025: UGX 199 (upcoming Jul 2026)
+    peRatio: 59.53, // EPS: UGX 209.99 (FY2024)
+    dividendYield: 1.7, // UGX 210/share ÷ 12,500; FY2025: UGX 199 (upcoming Jul 2026)
     lastUpdated: new Date().toISOString()
   },
   UMEME: {
-    currentPrice: 57.80,
-    change: 0,
-    changePercent: 0.00,
+    currentPrice: 63.00,
+    change: 0.02,
+    changePercent: 0.03,
     high52Week: 420,
     low52Week: 50,
-    marketCap: 'UGX 93.86B', // post-concession expiry; price reflects wind-down
-    volume: 250000,
+    marketCap: 'UGX 102.3B', // 1.624B shares × UGX 63
+    volume: 1611675,
     avgVolume: 200000,
-    peRatio: 0, // N/A — net loss FY2024 (EPS: -425.06); concession ended
-    dividendYield: 0, // No recurring dividend; FY2024 loss; UGX 222 special was one-off concession payout
+    peRatio: 0, // N/A — net loss FY2024; concession ended
+    dividendYield: 0, // No recurring dividend; FY2024 loss
     lastUpdated: new Date().toISOString()
   },
   QCIL: {
-    currentPrice: 122.00,
+    currentPrice: 143.00,
     change: 0,
     changePercent: 0.00,
     high52Week: 145,
     low52Week: 80,
-    marketCap: 'UGX 445.53B',
+    marketCap: 'UGX 522.2B', // 3.652B shares × UGX 143
     volume: 320000,
     avgVolume: 280000,
-    peRatio: 10.49,
-    dividendYield: 9.5, // FY2025 total: UGX 11.60/share (4.10+3.50+4.00) ÷ 122.00; pays quarterly
+    peRatio: 12.3, // EPS: UGX 11.63 (FY2024); 143 ÷ 11.63
+    dividendYield: 8.1, // UGX 11.59/share ÷ 143; pays quarterly
     lastUpdated: new Date().toISOString()
   }
 };

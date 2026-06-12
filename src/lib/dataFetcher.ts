@@ -118,20 +118,28 @@ const fuzzyMatchTicker = (name: string): string | undefined => {
   return undefined;
 };
 
-// AFX Kwayisi sometimes uses slightly different ticker codes
+// AFX Kwayisi (afx.kwayisi.org/use/) uses different ticker codes from USE
 const AFX_TICKER_ALIASES: Record<string, string> = {
-  AIRT: 'AIRTL',
+  // Airtel Uganda: AFX uses AIRTEL, USE uses AIRTL
+  AIRTEL: 'AIRTL',
   AIRTL: 'AIRTL',
+  // MTN Uganda: AFX uses MTNU
+  MTNU: 'MTN',
   MTN: 'MTN',
+  // New Vision: AFX uses NVL, USE uses NVU
+  NVL: 'NVU',
+  NVU: 'NVU',
+  // Umeme: AFX uses UMEM, USE uses UMEME
+  UMEM: 'UMEME',
+  UMEME: 'UMEME',
+  // Direct matches
   SBU: 'SBU',
   DFCU: 'DFCU',
   BOBU: 'BOBU',
   EBU: 'EBU',
   UCL: 'UCL',
-  NVU: 'NVU',
   NIC: 'NIC',
   BATU: 'BATU',
-  UMEME: 'UMEME',
   QCIL: 'QCIL',
 };
 
@@ -358,7 +366,7 @@ const parseAfxKwayisiHtml = (html: string): Record<string, AfxRow> => {
 };
 
 async function fetchAfxKwayisiPrices(): Promise<Record<string, AfxRow>> {
-  const response = await fetch('https://afx.kwayisi.org/ugse/', {
+  const response = await fetch('https://afx.kwayisi.org/use/', {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
   });
   if (!response.ok) throw new Error(`AFX Kwayisi request failed: ${response.status}`);
