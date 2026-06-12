@@ -89,6 +89,29 @@ export interface FinancialDocument {
   sourceTicker?: string;
 }
 
+export interface IncomeStatementNode {
+  id: string;
+  label: string;
+}
+
+export interface IncomeStatementLink {
+  source: string;
+  target: string;
+  value: number;
+}
+
+export interface IncomeStatement {
+  year: number;
+  period: string;
+  currency: string;
+  unit: string;
+  nodes: IncomeStatementNode[];
+  links: IncomeStatementLink[];
+  source?: string;
+  publishedAt?: string;
+  figuresFound: string[];
+}
+
 export interface StockData {
   info: StockInfo;
   metrics: StockMetrics;
@@ -101,6 +124,7 @@ export interface StockData {
     updatedAt?: string;
     sourceUrl?: string;
   };
+  incomeStatement?: IncomeStatement;
 }
 
 export const USE_STOCKS: StockInfo[] = [

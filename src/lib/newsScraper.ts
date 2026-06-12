@@ -57,9 +57,9 @@ type ExtractedDividendsPayload = {
 // Config
 // ──────────────────────────────────────────────────────────────────────────────
 
-const MAX_ARTICLE_AGE_DAYS = 30;
-const NEWS_CACHE_TTL_HOURS = 4;
-const DIV_CACHE_TTL_HOURS  = 24;
+const MAX_ARTICLE_AGE_DAYS = 45;
+const NEWS_CACHE_TTL_HOURS = 2;
+const DIV_CACHE_TTL_HOURS  = 12;
 const abortSignalWithTimeout = AbortSignal as typeof AbortSignal & {
   timeout?: (milliseconds: number) => AbortSignal;
 };
@@ -76,39 +76,75 @@ const createFetchOptions = (timeoutMs: number): RequestInit => ({
 // Sources ordered by financial relevance to USE-listed companies.
 const NEWS_SOURCES: NewsSource[] = [
   // Uganda-specific financial & general news
-  { name: 'Daily Monitor',       rssUrl: 'https://www.monitor.co.ug/business/markets/rss',       webUrl: 'https://www.monitor.co.ug/business/markets' },
-  { name: 'New Vision',          rssUrl: 'https://www.newvision.co.ug/feed',                      webUrl: 'https://www.newvision.co.ug/category/business' },
-  { name: 'Nile Post',           rssUrl: 'https://nilepost.co.ug/feed',                           webUrl: 'https://nilepost.co.ug/businesses' },
-  { name: 'The Observer',        rssUrl: 'https://observer.ug/feed',                              webUrl: 'https://observer.ug/business' },
-  { name: 'Chimp Reports',       rssUrl: 'https://chimpreports.com/feed',                         webUrl: 'https://chimpreports.com/category/business' },
+  { name: 'Daily Monitor',           rssUrl: 'https://www.monitor.co.ug/business/markets/rss',       webUrl: 'https://www.monitor.co.ug/business/markets' },
+  { name: 'New Vision',              rssUrl: 'https://www.newvision.co.ug/feed',                      webUrl: 'https://www.newvision.co.ug/category/business' },
+  { name: 'Nile Post',               rssUrl: 'https://nilepost.co.ug/feed',                           webUrl: 'https://nilepost.co.ug/businesses' },
+  { name: 'The Observer',            rssUrl: 'https://observer.ug/feed',                              webUrl: 'https://observer.ug/business' },
+  { name: 'Chimp Reports',           rssUrl: 'https://chimpreports.com/feed',                         webUrl: 'https://chimpreports.com/category/business' },
+  { name: 'PML Daily',               rssUrl: 'https://www.pmldaily.com/feed',                         webUrl: 'https://www.pmldaily.com/business' },
+  { name: 'Independent Uganda',      rssUrl: 'https://www.independent.co.ug/feed/',                   webUrl: 'https://www.independent.co.ug/category/business/' },
   // East Africa regional financial press
-  { name: 'The East African',    rssUrl: 'https://www.theeastafrican.co.ke/tea/business/rss',     webUrl: 'https://www.theeastafrican.co.ke/tea/business' },
-  { name: 'Business Daily',      rssUrl: 'https://www.businessdailyafrica.com/bd/markets/rss',    webUrl: 'https://www.businessdailyafrica.com/bd/markets' },
-  { name: 'Nation Africa',       rssUrl: 'https://nation.africa/kenya/business/rss',              webUrl: 'https://nation.africa/kenya/business' },
-  // USE & regulator announcements (HTML scrape — no RSS)
-  { name: 'USE Latest',          webUrl: 'https://www.use.or.ug/' },
-  { name: 'USE Announcements',   webUrl: 'https://www.use.or.ug/content/news' },
-  { name: 'CMA Uganda',          webUrl: 'https://www.cmauganda.co.ug/news' },
+  { name: 'The East African',        rssUrl: 'https://www.theeastafrican.co.ke/tea/business/rss',     webUrl: 'https://www.theeastafrican.co.ke/tea/business' },
+  { name: 'Business Daily Africa',   rssUrl: 'https://www.businessdailyafrica.com/bd/markets/rss',    webUrl: 'https://www.businessdailyafrica.com/bd/markets' },
+  { name: 'Nation Africa',           rssUrl: 'https://nation.africa/kenya/business/rss',              webUrl: 'https://nation.africa/kenya/business' },
+  { name: 'The Citizen Tanzania',    rssUrl: 'https://www.thecitizen.co.tz/tanzania/business/rss',    webUrl: 'https://www.thecitizen.co.tz/tanzania/business' },
+  // Pan-African financial news
+  { name: 'African Business',        rssUrl: 'https://african.business/feed/',                        webUrl: 'https://african.business/category/finance/' },
+  { name: 'This Is Africa',          rssUrl: 'https://thisisafrica.me/feed/',                         webUrl: 'https://thisisafrica.me/category/business/' },
+  // USE, regulator & company IR announcements (HTML scrape — no RSS)
+  { name: 'USE Latest',              webUrl: 'https://www.use.or.ug/' },
+  { name: 'USE Announcements',       webUrl: 'https://www.use.or.ug/content/news' },
+  { name: 'USE Filings',             webUrl: 'https://www.use.or.ug/content/company-filings' },
+  { name: 'CMA Uganda',              webUrl: 'https://www.cmauganda.co.ug/news' },
+  { name: 'CMA Uganda Circulars',    webUrl: 'https://www.cmauganda.co.ug/circulars' },
+  // African Financials — per-company news pages
+  { name: 'AfricanFinancials Uganda', webUrl: 'https://africanfinancials.com/africa/uganda/' },
+  // Company investor relations pages
+  { name: 'MTN Uganda IR',           webUrl: 'https://mtn.co.ug/investor-relations/' },
+  { name: 'Stanbic Uganda IR',       webUrl: 'https://www.stanbicbank.co.ug/uganda/personal/about-us/investor-relations' },
+  { name: 'DFCU Group IR',           webUrl: 'https://dfcugroup.com/investor-relations/' },
+  { name: 'Umeme IR',                webUrl: 'https://www.umeme.co.ug/investor-relations' },
+  { name: 'QCIL IR',                 webUrl: 'https://qcil.co.ug/investor-relations/' },
+  { name: 'New Vision Group IR',     webUrl: 'https://www.newvision.co.ug/investor-relations' },
 ];
 
 const DIVIDEND_URLS = [
+  // USE official dividend announcements — most authoritative source
   'https://www.use.or.ug/content/dividends-announcements',
+  // African Financials Uganda dividend page
   'https://africanfinancials.com/uganda-securities-exchange-dividends/',
+  // CMA Uganda — regulatory filings often contain dividend declarations
+  'https://www.cmauganda.co.ug/dividends',
+  // African Financials country-level dividend feed
+  'https://africanfinancials.com/africa/uganda/',
 ];
 
+// African Financials per-company pages — reliable structured data, scraped for both news & dividends
 const AFRICAN_FINANCIALS_COMPANY_URLS: Record<string, string> = {
-  MTN: 'https://africanfinancials.com/company/ug-mtn/',
+  MTN:   'https://africanfinancials.com/company/ug-mtn/',
   AIRTL: 'https://africanfinancials.com/company/ug-airtel/',
-  SBU: 'https://africanfinancials.com/company/ug-sbu/',
-  DFCU: 'https://africanfinancials.com/company/ug-dfcu/',
-  BOBU: 'https://africanfinancials.com/company/ug-bobu/',
-  EBU: 'https://africanfinancials.com/company/ug-ebl/',
-  UCL: 'https://africanfinancials.com/company/ug-ucl/',
-  NVU: 'https://africanfinancials.com/company/ug-nvl/',
-  NIC: 'https://africanfinancials.com/company/ug-nic/',
-  BATU: 'https://africanfinancials.com/company/ug-batu/',
+  SBU:   'https://africanfinancials.com/company/ug-sbu/',
+  DFCU:  'https://africanfinancials.com/company/ug-dfcu/',
+  BOBU:  'https://africanfinancials.com/company/ug-bobu/',
+  EBU:   'https://africanfinancials.com/company/ug-ebl/',
+  UCL:   'https://africanfinancials.com/company/ug-ucl/',
+  NVU:   'https://africanfinancials.com/company/ug-nvl/',
+  NIC:   'https://africanfinancials.com/company/ug-nic/',
+  BATU:  'https://africanfinancials.com/company/ug-batu/',
   UMEME: 'https://africanfinancials.com/company/ug-umeme/',
-  QCIL: 'https://africanfinancials.com/company/ug-qcil/',
+  QCIL:  'https://africanfinancials.com/company/ug-qcil/',
+};
+
+// Direct company IR pages for dividend announcements — checked in addition to African Financials
+const COMPANY_DIVIDEND_URLS: Record<string, string[]> = {
+  MTN:   ['https://mtn.co.ug/investor-relations/', 'https://mtn.co.ug/investor-relations/dividends/'],
+  AIRTL: ['https://www.airtel.co.ug/about-airtel/investors/'],
+  SBU:   ['https://www.stanbicbank.co.ug/uganda/personal/about-us/investor-relations'],
+  DFCU:  ['https://dfcugroup.com/investor-relations/', 'https://dfcugroup.com/investor-relations/dividends/'],
+  UMEME: ['https://www.umeme.co.ug/investor-relations', 'https://www.umeme.co.ug/investor-relations/dividends'],
+  QCIL:  ['https://qcil.co.ug/investor-relations/'],
+  NVU:   ['https://www.newvision.co.ug/investor-relations'],
+  BATU:  ['https://www.bat.com/group/sites/UK__9D9KCY.nsf/vwPagesWebLive/DO9DCL7K'],
 };
 
 const DIVIDEND_EXTRACTION_SCHEMA = {
@@ -658,6 +694,26 @@ export async function refreshDividends(): Promise<Record<string, DividendAnnounc
         console.error(`[newsScraper] Company dividend scrape failed for ${ticker}:`, err);
       }
     })
+  );
+
+  // Scrape direct company IR pages for dividend announcements
+  await Promise.allSettled(
+    Object.entries(COMPANY_DIVIDEND_URLS).flatMap(([ticker, urls]) =>
+      urls.map(async (url) => {
+        try {
+          const res = await fetch(url, createFetchOptions(5_000));
+          if (!res.ok) return;
+          const html = await res.text();
+          const parsedDividends = parseDividendHtml(html, ticker);
+          const dividends = parsedDividends.length > 0
+            ? parsedDividends
+            : await extractDividendsWithScrapeGraph(url, ticker);
+          for (const d of dividends) addDividend(d);
+        } catch (err) {
+          console.error(`[newsScraper] IR dividend scrape failed for ${ticker} @ ${url}:`, err);
+        }
+      })
+    )
   );
 
   if (found > 0) {

@@ -20,6 +20,7 @@ import ComparableAnalysis from '@/components/ComparableAnalysis';
 import RiskAnalysis from '@/components/RiskAnalysis';
 import PeerWatchlist from '@/components/PeerWatchlist';
 import TechnicalAnalysis from '@/components/TechnicalAnalysis';
+import IncomeStatementSankey from '@/components/IncomeStatementSankey';
 import { PatternDetection } from '@/lib/patternDetection';
 
 interface PatternSummary {
@@ -33,6 +34,7 @@ const SECTION_LINKS = [
   { href: '#market', label: 'Market' },
   { href: '#intelligence', label: 'News' },
   { href: '#technicals', label: 'Technicals' },
+  { href: '#financials', label: 'Financials' },
   { href: '#valuation', label: 'Valuation' },
   { href: '#risk', label: 'Risk' },
   { href: '#actions', label: 'Actions' },
@@ -183,6 +185,28 @@ export default function Home() {
               <StockChart ticker={selectedTicker} />
               {patternSummary && (
                 <PatternDisplay patterns={patterns} patternSummary={patternSummary} />
+              )}
+            </section>
+
+            <section id="financials" className="scroll-mt-28 space-y-6">
+              {stockData.incomeStatement ? (
+                <IncomeStatementSankey
+                  incomeStatement={stockData.incomeStatement}
+                  ticker={selectedTicker}
+                />
+              ) : (
+                <div className="rounded-2xl border border-slate-700/50 bg-gradient-to-br from-slate-900 to-slate-800 p-6 shadow-xl">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300">
+                    Income Statement
+                  </p>
+                  <h3 className="mt-2 text-2xl font-semibold text-white">
+                    {selectedTicker} Revenue Flow
+                  </h3>
+                  <p className="mt-3 text-sm text-slate-400">
+                    Income statement data not yet available. Financial documents are scraped weekly
+                    from African Financials — data will appear after the next scheduled refresh.
+                  </p>
+                </div>
               )}
             </section>
 

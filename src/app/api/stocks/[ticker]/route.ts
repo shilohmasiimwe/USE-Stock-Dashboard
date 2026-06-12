@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getStockDataSync } from '@/lib/mockData';
 import { fetchCurrentPrices } from '@/lib/dataFetcher';
 import { getFinancialsSnapshot } from '@/lib/financialsScraper';
+import { buildIncomeStatement } from '@/lib/incomeStatementParser';
 import { StockMetrics } from '@/types/stock';
 import {
   getNewsForTicker,
@@ -90,6 +91,11 @@ export async function GET(
       updatedAt: financialsSnapshot.updatedAt,
       sourceUrl: financialsSnapshot.sourceUrl,
     };
+    // Build income statement Sankey data from the scraped financial documents
+    const incomeStatement = buildIncomeStatement(stockData.financials);
+    if (incomeStatement) {
+      stockData.incomeStatement = incomeStatement;
+    }
   }
 
   return NextResponse.json({
