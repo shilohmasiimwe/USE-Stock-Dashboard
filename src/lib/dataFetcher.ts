@@ -4,6 +4,7 @@
 import { StockMetrics, USE_STOCKS } from '@/types/stock';
 import { getStockDataSync } from './mockData';
 import { getCachedPrices, setCachedPrices, invalidatePriceCache } from './redis';
+import { extractWithScrapeGraph } from './scrapeGraphAi';
 
 interface PriceData {
   date: string;
@@ -373,6 +374,72 @@ async function fetchAfxKwayisiPrices(): Promise<Record<string, AfxRow>> {
   return parseAfxKwayisiHtml(await response.text());
 }
 
+// ── African Financials stealth scrape ────────────────────────────────────────
+// African Financials uses Cloudflare; a plain fetch returns 403.
+// ScrapeGraphAI with stealth=true routes through residential proxies and
+// renders the page as a real browser — costs ~10 credits per call.
+// Requires SGAI_API_KEY in environment variables.
+
+type AfPriceRow = {
+  company: string;
+  price: number;
+  changePercent?: number;
+  volume?: number;
+};
+
+const AF_PRICE_SCHEMA = {
+  type: 'object',
+  properties: {
+    stocks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          company: { type: 'string' },
+          price: { type: 'number' },
+          changePercent: { type: 'number' },
+          volume: { type: 'number' },
+        },
+        required: ['company', 'price'],
+      },
+    },
+  },
+  required: ['stocks'],
+};
+
+type SimplePriceRow = { currentPrice: number; changePercent: number; volume: number; lastUpdated: string };
+
+async function fetchAfricanFinancialsStealth(): Promise<Record<string, SimplePriceRow>> {
+  const result = await extractWithScrapeGraph<{ stocks?: AfPriceRow[] } | AfPriceRow[]>({
+    url: 'https://africanfinancials.com/uganda-securities-exchange-share-prices/',
+    prompt: 'Extract all rows from the Uganda Securities Exchange share prices table. For each stock return the full company name, the current share price as a number, the percentage change as a number, and the trading volume as a number.',
+    outputSchema: AF_PRICE_SCHEMA,
+    fetchConfig: { stealth: true, mode: 'js', wait: 3000 },
+  });
+
+  if (!result.ok) throw new Error(`African Financials stealth scrape: ${result.error}`);
+
+  const raw = result.data;
+  const rows: AfPriceRow[] = Array.isArray(raw)
+    ? (raw as AfPriceRow[])
+    : ((raw as { stocks?: AfPriceRow[] }).stocks ?? []);
+
+  const parsed: Record<string, SimplePriceRow> = {};
+  for (const entry of rows) {
+    if (!entry?.company || !(entry.price > 0)) continue;
+    const ticker =
+      COMPANY_TICKER_MAP[normalizeCompanyName(entry.company)] ?? fuzzyMatchTicker(entry.company);
+    if (!ticker) continue;
+    parsed[ticker] = {
+      currentPrice: entry.price,
+      changePercent: entry.changePercent ?? 0,
+      volume: entry.volume ?? 0,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+  return parsed;
+}
+
 async function fetchFallbackPrices(): Promise<Record<string, StockMetrics>> {
   const fallbackUrl = process.env.AFRICAN_MARKET_FALLBACK_URL;
   if (!fallbackUrl) return {};
@@ -435,38 +502,48 @@ export async function fetchCurrentPrices(): Promise<Record<string, StockMetrics>
     }
   }
 
-  // 3. Scrape both sources in parallel — AFX Kwayisi (explicit tickers, higher
-  //    reliability) and African Financials (name-based, broader coverage).
-  //    Merge results: AFX Kwayisi wins on price when present; African Financials
-  //    fills gaps for tickers AFX doesn't cover.
+  // 3. Scrape all three sources in parallel:
+  //    a) African Financials via ScrapeGraphAI stealth — authoritative source,
+  //       bypasses Cloudflare with residential proxy + JS render (~10 credits).
+  //       Requires SGAI_API_KEY; skipped gracefully when key is absent.
+  //    b) AFX Kwayisi — ticker-symbol based, free, reliable fallback.
+  //    c) African Financials direct HTML — may succeed server-side; fills gaps.
+  //    Merge priority: African Financials stealth > AFX Kwayisi > AF direct HTML.
   try {
-    const [afxResult, afResult] = await Promise.allSettled([
+    const [afStealthResult, afxResult, afDirectResult] = await Promise.allSettled([
+      fetchAfricanFinancialsStealth(),
       fetchAfxKwayisiPrices(),
       fetch('https://africanfinancials.com/uganda-securities-exchange-share-prices/', {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
       }).then((r) => {
-        if (!r.ok) throw new Error(`African Financials: ${r.status}`);
+        if (!r.ok) throw new Error(`African Financials direct: ${r.status}`);
         return r.text().then(parseAfricanFinancialsHtml);
       }),
     ]);
 
+    const afStealthParsed: Record<string, SimplePriceRow> =
+      afStealthResult.status === 'fulfilled' ? afStealthResult.value : {};
     const afxParsed: Record<string, AfxRow> =
       afxResult.status === 'fulfilled' ? afxResult.value : {};
-    const afParsed =
-      afResult.status === 'fulfilled' ? afResult.value : {};
+    const afDirectParsed =
+      afDirectResult.status === 'fulfilled' ? afDirectResult.value : {};
 
-    const totalHits = Object.keys(afxParsed).length + Object.keys(afParsed).length;
-    if (totalHits === 0) throw new Error('No prices from either source');
+    const totalHits =
+      Object.keys(afStealthParsed).length +
+      Object.keys(afxParsed).length +
+      Object.keys(afDirectParsed).length;
+    if (totalHits === 0) throw new Error('No prices from any source');
 
     const prices: Record<string, StockMetrics> = {};
     for (const stock of USE_STOCKS) {
       const base = getStockDataSync(stock.ticker)?.metrics;
       if (!base) continue;
 
-      // AFX Kwayisi takes precedence; fall back to African Financials
+      // Priority: African Financials stealth > AFX Kwayisi > AF direct HTML
+      const afRow = afStealthParsed[stock.ticker];
       const afxRow = afxParsed[stock.ticker];
-      const afRow = afParsed[stock.ticker];
-      const update = afxRow ?? afRow;
+      const afDirectRow = afDirectParsed[stock.ticker];
+      const update = afRow ?? afxRow ?? afDirectRow;
 
       if (update) {
         const newPrice = update.currentPrice;
@@ -479,7 +556,7 @@ export async function fetchCurrentPrices(): Promise<Record<string, StockMetrics>
           volume: update.volume || base.volume,
           peRatio: derivePeRatio(base, newPrice),
           dividendYield: deriveDividendYield(base, newPrice),
-          // Use live 52-week range when AFX provides it; keep base otherwise
+          // Use live 52-week range when AFX Kwayisi provides it; keep base otherwise
           high52Week: (afxRow?.high52Week ?? 0) > 0 ? afxRow!.high52Week : base.high52Week,
           low52Week: (afxRow?.low52Week ?? 0) > 0 ? afxRow!.low52Week : base.low52Week,
           lastUpdated: update.lastUpdated,
