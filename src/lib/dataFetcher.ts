@@ -24,32 +24,115 @@ let priceCache: Record<string, StockMetrics> | null = null;
 let lastUpdate: Date | null = null;
 
 const COMPANY_TICKER_MAP: Record<string, string> = {
+  // MTN
   'mtn': 'MTN',
   'mtn uganda': 'MTN',
+  'mtn uganda limited': 'MTN',
+  // Airtel
   'airtel uganda': 'AIRTL',
   'airtel': 'AIRTL',
+  'airtel uganda limited': 'AIRTL',
+  // Stanbic
   'stanbic': 'SBU',
   'stanbic bank': 'SBU',
   'stanbic bank uganda': 'SBU',
+  'stanbic bank uganda limited': 'SBU',
+  // DFCU
   'dfcu bank': 'DFCU',
   'dfcu': 'DFCU',
+  'dfcu limited': 'DFCU',
+  'dfcu group': 'DFCU',
+  // Bank of Baroda
   'baroda': 'BOBU',
   'bank of baroda': 'BOBU',
   'bank of baroda uganda': 'BOBU',
+  'bank of baroda uganda limited': 'BOBU',
+  'bank of baroda (u) limited': 'BOBU',
+  // Equity Bank
   'equity bank uganda': 'EBU',
   'equity bank': 'EBU',
+  'equity bank uganda limited': 'EBU',
+  'equity bank (u) limited': 'EBU',
+  // Uganda Clays
   'uganda clays': 'UCL',
+  'uganda clays limited': 'UCL',
+  'uganda clays ltd': 'UCL',
+  // New Vision
   'new vision': 'NVU',
   'new vision printing and publishing': 'NVU',
+  'new vision printing and publishing company': 'NVU',
+  'new vision printing and publishing company limited': 'NVU',
+  'new vision group': 'NVU',
+  // NIC — National Insurance Corporation (many aliases used by African Financials)
   'national insurance corporation': 'NIC',
+  'national insurance corporation limited': 'NIC',
+  'national insurance corporation of uganda': 'NIC',
+  'national insurance corporation (u) limited': 'NIC',
+  'nic': 'NIC',
+  'nic holdings': 'NIC',
+  'nic holdings limited': 'NIC',
+  'nic uganda': 'NIC',
+  'national insurance': 'NIC',
+  // BATU
   'bat uganda': 'BATU',
   'british american tobacco uganda': 'BATU',
+  'british american tobacco': 'BATU',
+  'british american tobacco uganda limited': 'BATU',
+  'bat': 'BATU',
+  'b.a.t uganda': 'BATU',
+  'b.a.t. uganda': 'BATU',
+  // Umeme
   'umeme': 'UMEME',
+  'umeme limited': 'UMEME',
+  'umeme ltd': 'UMEME',
+  // QCIL
   'qcil': 'QCIL',
   'quality chemical industries': 'QCIL',
   'quality chemicals industries': 'QCIL',
   'quality chemicals industries ltd': 'QCIL',
-  'quality chemical industries ltd': 'QCIL'
+  'quality chemical industries ltd': 'QCIL',
+  'quality chemical industries limited': 'QCIL',
+  'quality chemicals': 'QCIL',
+};
+
+// Keyword-based fuzzy fallback for company names not in the exact map
+const COMPANY_KEYWORDS: [RegExp, string][] = [
+  [/\bmtn\b/i, 'MTN'],
+  [/\bairtel\b/i, 'AIRTL'],
+  [/\bstanbic\b/i, 'SBU'],
+  [/\bdfcu\b/i, 'DFCU'],
+  [/\bbaroda\b/i, 'BOBU'],
+  [/equity\s+bank/i, 'EBU'],
+  [/uganda\s+clay/i, 'UCL'],
+  [/new\s+vision/i, 'NVU'],
+  [/\b(nic\b|national\s+insurance)/i, 'NIC'],
+  [/(british\s+american\s+tobacco|\bbat\b)/i, 'BATU'],
+  [/\bumeme\b/i, 'UMEME'],
+  [/\b(qcil|quality\s+chem)/i, 'QCIL'],
+];
+
+const fuzzyMatchTicker = (name: string): string | undefined => {
+  for (const [pattern, ticker] of COMPANY_KEYWORDS) {
+    if (pattern.test(name)) return ticker;
+  }
+  return undefined;
+};
+
+// AFX Kwayisi sometimes uses slightly different ticker codes
+const AFX_TICKER_ALIASES: Record<string, string> = {
+  AIRT: 'AIRTL',
+  AIRTL: 'AIRTL',
+  MTN: 'MTN',
+  SBU: 'SBU',
+  DFCU: 'DFCU',
+  BOBU: 'BOBU',
+  EBU: 'EBU',
+  UCL: 'UCL',
+  NVU: 'NVU',
+  NIC: 'NIC',
+  BATU: 'BATU',
+  UMEME: 'UMEME',
+  QCIL: 'QCIL',
 };
 
 const normalizeCompanyName = (name: string) =>
@@ -150,15 +233,20 @@ const parseAfricanFinancialsHtml = (html: string) => {
 
     if (!headerCells) {
       const normalized = cells.map(headerLookup);
-      const isHeader = normalized.some((cell) => cell.includes('company')) && normalized.some((cell) => cell.includes('price'));
-      if (isHeader) {
+      const hasCompanyCol = normalized.some((cell) =>
+        cell.includes('company') || cell.includes('issuer') || cell === 'stock' || cell === 'name' || cell === 'security'
+      );
+      const hasPriceCol = normalized.some((cell) => cell.includes('price') || cell === 'last' || cell === 'close');
+      if (hasCompanyCol && hasPriceCol) {
         headerCells = normalized;
         headerIndexes = {
-          company: normalized.findIndex((cell) => cell.includes('company')),
-          price: normalized.findIndex((cell) => cell.includes('price')),
-          changePct: normalized.findIndex((cell) => cell.includes('%') && cell.includes('change')),
-          volume: normalized.findIndex((cell) => cell.includes('volume')),
-          updated: normalized.findIndex((cell) => cell.includes('updated') || cell.includes('date'))
+          company: normalized.findIndex((cell) =>
+            cell.includes('company') || cell.includes('issuer') || cell === 'stock' || cell === 'name' || cell === 'security'
+          ),
+          price: normalized.findIndex((cell) => cell.includes('price') || cell === 'last' || cell === 'close'),
+          changePct: normalized.findIndex((cell) => (cell.includes('%') || cell.includes('change') || cell === 'chg') && !cell.includes('52')),
+          volume: normalized.findIndex((cell) => cell.includes('volume') || cell === 'vol'),
+          updated: normalized.findIndex((cell) => cell.includes('updated') || cell.includes('date') || cell === 'time')
         };
       }
       continue;
@@ -169,7 +257,7 @@ const parseAfricanFinancialsHtml = (html: string) => {
     const values = cells.map(stripTags);
     const companyRaw = values[headerIndexes.company] || '';
     const company = normalizeCompanyName(companyRaw);
-    const ticker = COMPANY_TICKER_MAP[company];
+    const ticker = COMPANY_TICKER_MAP[company] ?? fuzzyMatchTicker(companyRaw);
     if (!ticker) continue;
 
     const priceText = values[headerIndexes.price] || '';
@@ -196,6 +284,86 @@ const parseAfricanFinancialsHtml = (html: string) => {
 
   return parsed;
 };
+
+// ── AFX Kwayisi parser ───────────────────────────────────────────────────────
+// afx.kwayisi.org/ugse/ lists tickers explicitly in a Symbol column — much
+// more reliable than name-matching. Also provides 52-week high/low.
+
+type AfxRow = {
+  currentPrice: number;
+  changePercent: number;
+  volume: number;
+  high52Week: number;
+  low52Week: number;
+  lastUpdated: string;
+};
+
+const parseAfxKwayisiHtml = (html: string): Record<string, AfxRow> => {
+  const sanitized = html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ');
+  const rows = sanitized.match(/<tr[\s\S]*?<\/tr>/gi) || [];
+
+  let symbolIdx = -1;
+  let lastIdx = -1;
+  let chgPctIdx = -1;
+  let high52Idx = -1;
+  let low52Idx = -1;
+  let volIdx = -1;
+
+  const parsed: Record<string, AfxRow> = {};
+
+  for (const row of rows) {
+    const cells = Array.from(row.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)).map((m) => m[1]);
+    if (!cells.length) continue;
+
+    const values = cells.map(stripTags);
+
+    if (symbolIdx === -1) {
+      const norm = values.map((v) => v.toLowerCase().trim());
+      const sIdx = norm.findIndex((v) => v === 'sym' || v === 'symbol' || v === 'ticker' || v === 'code');
+      if (sIdx < 0) continue;
+      symbolIdx = sIdx;
+      lastIdx = norm.findIndex((v) => v === 'last' || v === 'price' || v === 'close' || v.includes('last price'));
+      chgPctIdx = norm.findIndex((v) => v === '%chg' || v === 'chg%' || v === '%change' || v.includes('%'));
+      high52Idx = norm.findIndex((v) => v.includes('52') && (v.includes('hi') || v.includes('high') || v.includes('max')));
+      low52Idx = norm.findIndex((v) => v.includes('52') && (v.includes('lo') || v.includes('low') || v.includes('min')));
+      volIdx = norm.findIndex((v) => v === 'volume' || v === 'vol' || v.includes('shares'));
+      continue;
+    }
+
+    const symbol = values[symbolIdx]?.toUpperCase().trim();
+    if (!symbol) continue;
+
+    const ticker = AFX_TICKER_ALIASES[symbol];
+    if (!ticker) continue;
+
+    const price = parseNumber(values[lastIdx] ?? '');
+    if (!Number.isFinite(price) || price <= 0) continue;
+
+    const chgPct = parseNumber(values[chgPctIdx] ?? '');
+    const vol = parseNumber(values[volIdx] ?? '');
+    const hi52 = parseNumber(values[high52Idx] ?? '');
+    const lo52 = parseNumber(values[low52Idx] ?? '');
+
+    parsed[ticker] = {
+      currentPrice: price,
+      changePercent: Number.isFinite(chgPct) ? chgPct : 0,
+      volume: Number.isFinite(vol) && vol >= 0 ? vol : 0,
+      high52Week: Number.isFinite(hi52) && hi52 > 0 ? hi52 : 0,
+      low52Week: Number.isFinite(lo52) && lo52 > 0 ? lo52 : 0,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  return parsed;
+};
+
+async function fetchAfxKwayisiPrices(): Promise<Record<string, AfxRow>> {
+  const response = await fetch('https://afx.kwayisi.org/ugse/', {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+  });
+  if (!response.ok) throw new Error(`AFX Kwayisi request failed: ${response.status}`);
+  return parseAfxKwayisiHtml(await response.text());
+}
 
 async function fetchFallbackPrices(): Promise<Record<string, StockMetrics>> {
   const fallbackUrl = process.env.AFRICAN_MARKET_FALLBACK_URL;
@@ -259,49 +427,58 @@ export async function fetchCurrentPrices(): Promise<Record<string, StockMetrics>
     }
   }
 
-  // 3. Scrape African Financials
+  // 3. Scrape both sources in parallel — AFX Kwayisi (explicit tickers, higher
+  //    reliability) and African Financials (name-based, broader coverage).
+  //    Merge results: AFX Kwayisi wins on price when present; African Financials
+  //    fills gaps for tickers AFX doesn't cover.
   try {
-    const response = await fetch('https://africanfinancials.com/uganda-securities-exchange-share-prices/', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
+    const [afxResult, afResult] = await Promise.allSettled([
+      fetchAfxKwayisiPrices(),
+      fetch('https://africanfinancials.com/uganda-securities-exchange-share-prices/', {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      }).then((r) => {
+        if (!r.ok) throw new Error(`African Financials: ${r.status}`);
+        return r.text().then(parseAfricanFinancialsHtml);
+      }),
+    ]);
 
-    if (!response.ok) {
-      throw new Error(`African Financials request failed: ${response.status}`);
-    }
+    const afxParsed: Record<string, AfxRow> =
+      afxResult.status === 'fulfilled' ? afxResult.value : {};
+    const afParsed =
+      afResult.status === 'fulfilled' ? afResult.value : {};
 
-    const html = await response.text();
-    const parsedPrices = parseAfricanFinancialsHtml(html);
+    const totalHits = Object.keys(afxParsed).length + Object.keys(afParsed).length;
+    if (totalHits === 0) throw new Error('No prices from either source');
 
     const prices: Record<string, StockMetrics> = {};
     for (const stock of USE_STOCKS) {
       const base = getStockDataSync(stock.ticker)?.metrics;
       if (!base) continue;
 
-      const update = parsedPrices[stock.ticker];
+      // AFX Kwayisi takes precedence; fall back to African Financials
+      const afxRow = afxParsed[stock.ticker];
+      const afRow = afParsed[stock.ticker];
+      const update = afxRow ?? afRow;
+
       if (update) {
+        const newPrice = update.currentPrice;
         prices[stock.ticker] = {
           ...base,
-          currentPrice: update.currentPrice,
+          currentPrice: newPrice,
           changePercent: update.changePercent,
-          change: Number((update.currentPrice * (update.changePercent / 100)).toFixed(2)),
-          marketCap: deriveMarketCap(base.marketCap, update.currentPrice, base.currentPrice),
-          volume: update.volume,
-          peRatio: derivePeRatio(base, update.currentPrice),
-          dividendYield: deriveDividendYield(base, update.currentPrice),
-          lastUpdated: update.lastUpdated
+          change: Number((newPrice * (update.changePercent / 100)).toFixed(2)),
+          marketCap: deriveMarketCap(base.marketCap, newPrice, base.currentPrice),
+          volume: update.volume || base.volume,
+          peRatio: derivePeRatio(base, newPrice),
+          dividendYield: deriveDividendYield(base, newPrice),
+          // Use live 52-week range when AFX provides it; keep base otherwise
+          high52Week: (afxRow?.high52Week ?? 0) > 0 ? afxRow!.high52Week : base.high52Week,
+          low52Week: (afxRow?.low52Week ?? 0) > 0 ? afxRow!.low52Week : base.low52Week,
+          lastUpdated: update.lastUpdated,
         };
       } else {
-        prices[stock.ticker] = {
-          ...base,
-          lastUpdated: base.lastUpdated || new Date().toISOString()
-        };
+        prices[stock.ticker] = { ...base, lastUpdated: base.lastUpdated || new Date().toISOString() };
       }
-    }
-
-    if (Object.keys(prices).length === 0) {
-      throw new Error('No prices parsed from African Financials');
     }
 
     // Persist to Redis (24 hr TTL) and warm in-memory cache
