@@ -2,15 +2,7 @@
   "crons": [
     {
       "path": "/api/update-prices",
-      "schedule": "0 6,9,12 * * 1-5"
-    },
-    {
-      "path": "/api/update-news",
-      "schedule": "0 */2 * * *"
-    },
-    {
-      "path": "/api/update-dividends",
-      "schedule": "0 */12 * * *"
+      "schedule": "0 6 * * 1-5"
     },
     {
       "path": "/api/update-financials",
