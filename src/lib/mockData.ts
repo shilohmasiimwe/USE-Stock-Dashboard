@@ -717,12 +717,12 @@ const stockMetrics: Record<string, StockMetrics> = {
     lastUpdated: new Date().toISOString()
   },
   NIC: {
-    currentPrice: 24.00,
+    currentPrice: 5.00,
     change: 0,
     changePercent: 0,
-    high52Week: 32,
-    low52Week: 16,
-    marketCap: 'UGX 50.9B', // 2.12B shares × UGX 24.00
+    high52Week: 18,
+    low52Week: 5,
+    marketCap: 'UGX 10.6B', // 2.12B shares × UGX 5.00 — confirmed African Financials
     volume: 95000,
     avgVolume: 78000,
     peRatio: 81.8, // EPS: UGX 0.22 — thin profitability; FY2024 net income UGX 477M
