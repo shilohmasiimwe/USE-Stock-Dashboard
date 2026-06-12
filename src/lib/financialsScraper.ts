@@ -79,6 +79,17 @@ type ExtractedFinancialsPayload = {
   documents?: ExtractedFinancialDocument[];
 };
 
+const FIGURES_SCHEMA_ITEM = {
+  type: 'object',
+  properties: {
+    label:    { type: 'string' },
+    value:    { type: ['number', 'null'] },
+    currency: { type: 'string' },
+    unit:     { type: 'string' },
+    raw:      { type: 'string' },
+  },
+} as const;
+
 const FINANCIALS_EXTRACTION_SCHEMA = {
   type: 'object',
   properties: {
@@ -87,34 +98,104 @@ const FINANCIALS_EXTRACTION_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          ticker: { type: 'string' },
-          company: { type: 'string' },
-          title: { type: 'string' },
-          url: { type: 'string' },
+          ticker:       { type: 'string' },
+          company:      { type: 'string' },
+          title:        { type: 'string' },
+          url:          { type: 'string' },
           documentType: { type: 'string' },
-          publishedAt: { type: 'string' },
-          year: { type: ['number', 'null'] },
-          period: { type: 'string' },
-          sector: { type: 'string' },
-          summary: { type: 'string' },
-          figures: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                label: { type: 'string' },
-                value: { type: ['number', 'null'] },
-                currency: { type: 'string' },
-                unit: { type: 'string' },
-                raw: { type: 'string' },
-              },
-            },
-          },
+          publishedAt:  { type: 'string' },
+          year:         { type: ['number', 'null'] },
+          period:       { type: 'string' },
+          sector:       { type: 'string' },
+          summary:      { type: 'string' },
+          figures:      { type: 'array', items: FIGURES_SCHEMA_ITEM },
         },
       },
     },
   },
 } as const;
+
+// Schema used when fetching an individual document detail page on African Financials.
+// Targets the complete income statement / P&L breakdown.
+const IS_DETAIL_EXTRACTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    year:    { type: ['number', 'null'] },
+    period:  { type: 'string' },
+    figures: { type: 'array', items: FIGURES_SCHEMA_ITEM },
+  },
+} as const;
+
+type ISDetailPayload = {
+  year?: number | null;
+  period?: string;
+  figures?: Array<{
+    label?: string;
+    value?: number | string | null;
+    currency?: string;
+    unit?: string;
+    raw?: string;
+  }>;
+};
+
+const isISDetailPayload = (v: unknown): v is ISDetailPayload =>
+  typeof v === 'object' && v !== null;
+
+// Fetch an individual African Financials document page and extract detailed P&L figures.
+// Only called for URLs that live on africanfinancials.com (not external PDFs).
+async function fetchDocumentDetails(docUrl: string): Promise<FinancialFigure[]> {
+  if (!docUrl.includes('africanfinancials.com') || docUrl.endsWith('.pdf')) return [];
+
+  let html = '';
+  try {
+    const res = await fetch(docUrl, createFetchOptions(8_000));
+    if (!res.ok) return [];
+    html = await res.text();
+  } catch {
+    return [];
+  }
+
+  // 1. HTML-based extraction from the detail page content
+  const clean = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ');
+  const text = stripTags(clean).replace(/\s+/g, ' ');
+  const htmlFigures = parseFigures(text);
+
+  // If HTML gave us at least 2 labelled figures, return immediately
+  if (htmlFigures.length >= 2) return htmlFigures;
+
+  // 2. ScrapeGraphAI fallback with a tightly focused income statement prompt
+  const extraction = await extractWithScrapeGraph<ISDetailPayload>({
+    url: docUrl,
+    prompt:
+      'Extract the complete income statement (profit & loss) from this financial document page. ' +
+      'Return every line item you find: Total Revenue/Turnover, Cost of Sales/Revenue, Gross Profit, ' +
+      'Operating Expenses, Depreciation & Amortisation, Operating Profit/EBIT, Finance Income, ' +
+      'Finance Costs/Interest Expense, Profit Before Tax, Income Tax, Net Profit/PAT, ' +
+      'Dividends Paid, Retained Earnings. ' +
+      'For each item provide: label (exact name used on the page), value (number), ' +
+      'currency (UGX/KES/USD), unit (million/billion/trillion), and the raw text snippet.',
+    outputSchema: IS_DETAIL_EXTRACTION_SCHEMA,
+    fetchConfig: { mode: 'auto', wait: 2000, timeout: 12000 },
+    validate: isISDetailPayload,
+  });
+
+  if (!extraction.ok) return htmlFigures;
+
+  return (extraction.data.figures ?? []).flatMap((f): FinancialFigure[] => {
+    if (!f.label) return [];
+    const raw = typeof f.value === 'string' ? f.value : String(f.value ?? '');
+    const value = Number.parseFloat(raw.replace(/,/g, ''));
+    return [{
+      label: f.label,
+      value: Number.isFinite(value) ? value : null,
+      currency: f.currency,
+      unit: f.unit,
+      raw: f.raw ?? `${f.label}: ${f.value ?? ''}`.trim(),
+    }];
+  });
+}
 
 let financialsCache: FinancialsSnapshot | null = null;
 let lastUpdate: Date | null = null;
@@ -173,23 +254,77 @@ const parsePublishedDate = (value: string | undefined) => {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 };
 
+const CURRENCY_RE = /Ushs?|Shs|UGX|Kshs|KES|USD/i;
+const UNIT_RE = /trillion|billion|million|bn|m\b(?!\w)/i;
+
+function normCurrency(raw: string | undefined) {
+  if (!raw) return undefined;
+  return raw.toUpperCase().replace(/^USHS?$/, 'UGX').replace(/^SHS$/, 'UGX');
+}
+
 function parseFigures(summary: string): FinancialFigure[] {
   const results: FinancialFigure[] = [];
-  const pattern = /([A-Za-z][A-Za-z \-()\/]{2,40}):\s*(Ushs?|Shs|UGX|Kshs|KES|USD)?\s*([\d,.]+)\s*(trillion|billion|million|bn|m|k)?/gi;
+  const seen = new Set<string>();
 
-  for (const match of summary.matchAll(pattern)) {
-    const label = match[1].trim();
-    const currencyRaw = match[2]?.trim();
-    const rawValue = match[3]?.replace(/,/g, '');
-    const unit = match[4]?.toLowerCase();
+  // Pattern 1 — "Label: [currency] value [unit]"
+  const colonPattern = /([A-Za-z][A-Za-z \-()\/]{2,50}):\s*(Ushs?|Shs|UGX|Kshs|KES|USD)?\s*([\d,.]+)\s*(trillion|billion|million|bn|m\b)?/gi;
+  for (const m of summary.matchAll(colonPattern)) {
+    const label = m[1].trim();
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rawValue = m[3]?.replace(/,/g, '');
     const value = rawValue ? Number.parseFloat(rawValue) : null;
-
     results.push({
       label,
       value: Number.isFinite(value as number) ? (value as number) : null,
-      currency: currencyRaw ? currencyRaw.toUpperCase().replace('USHS', 'UGX').replace('SHS', 'UGX') : undefined,
-      unit,
-      raw: match[0].trim(),
+      currency: normCurrency(m[2]?.trim()),
+      unit: m[4]?.toLowerCase(),
+      raw: m[0].trim(),
+    });
+  }
+
+  // Pattern 2 — "Label of [currency] value [unit]" or "Label grew/rose to [currency] value [unit]"
+  const prosePattern = /([A-Za-z][A-Za-z \-()\/]{2,50})\s+(?:of|to|at|was|totalled?|reached|grew to|rose to)\s+(Ushs?|Shs|UGX|Kshs|KES|USD)?\s*([\d,.]+)\s*(trillion|billion|million|bn|m\b)?/gi;
+  for (const m of summary.matchAll(prosePattern)) {
+    const label = m[1].trim();
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    // Only accept if there is a numeric value with a known currency or unit
+    if (!m[2] && !UNIT_RE.test(m[4] ?? '')) continue;
+    seen.add(key);
+    const rawValue = m[3]?.replace(/,/g, '');
+    const value = rawValue ? Number.parseFloat(rawValue) : null;
+    results.push({
+      label,
+      value: Number.isFinite(value as number) ? (value as number) : null,
+      currency: normCurrency(m[2]?.trim()),
+      unit: m[4]?.toLowerCase(),
+      raw: m[0].trim(),
+    });
+  }
+
+  // Pattern 3 — standalone "[currency] value [unit]" near a P&L keyword
+  const plKeywords = /\b(revenue|turnover|profit|income|loss|expense|cost|earnings|ebit|pat|pbt|sales|dividend|tax)\b/i;
+  const amountPattern = /(Ushs?|Shs|UGX|Kshs|KES|USD)\s*([\d,.]+)\s*(trillion|billion|million|bn|m\b)?/gi;
+  for (const m of summary.matchAll(amountPattern)) {
+    const start = m.index ?? 0;
+    const context = summary.slice(Math.max(0, start - 60), start + m[0].length + 10);
+    const labelMatch = context.match(/([A-Za-z][A-Za-z \-()\/]{2,40})\s*(?:of|:|was|to|at)?$/i);
+    if (!labelMatch) continue;
+    const label = labelMatch[1].trim();
+    if (!plKeywords.test(label)) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rawValue = m[2]?.replace(/,/g, '');
+    const value = rawValue ? Number.parseFloat(rawValue) : null;
+    results.push({
+      label,
+      value: Number.isFinite(value as number) ? (value as number) : null,
+      currency: normCurrency(m[1]),
+      unit: m[3]?.toLowerCase(),
+      raw: m[0].trim(),
     });
   }
 
@@ -326,6 +461,23 @@ async function extractDocumentsWithScrapeGraph(sourceUrl: string): Promise<Omit<
   });
 }
 
+// Merge additional figures into a doc, preferring the richer set per label.
+function mergeFigures(
+  base: FinancialFigure[],
+  extra: FinancialFigure[],
+): FinancialFigure[] {
+  const byLabel = new Map<string, FinancialFigure>();
+  for (const f of base)  byLabel.set(f.label.toLowerCase(), f);
+  for (const f of extra) {
+    const key = f.label.toLowerCase();
+    // Prefer the entry that has an actual numeric value
+    if (!byLabel.has(key) || (f.value != null && byLabel.get(key)!.value == null)) {
+      byLabel.set(key, f);
+    }
+  }
+  return [...byLabel.values()];
+}
+
 async function fetchAllDocuments(): Promise<Omit<FinancialDocument, 'ticker'>[]> {
   const allDocs: Omit<FinancialDocument, 'ticker'>[] = [];
   const seen = new Set<string>();
@@ -350,6 +502,24 @@ async function fetchAllDocuments(): Promise<Omit<FinancialDocument, 'ticker'>[]>
     }
 
     if (docs.length === 0 || newCount === 0) break;
+  }
+
+  // Enrich documents that link to an African Financials detail page by fetching
+  // the full P&L breakdown from that page (the listing summary is often sparse).
+  // Run in parallel with a concurrency cap so we don't hammer the server.
+  const BATCH = 6;
+  for (let i = 0; i < allDocs.length; i += BATCH) {
+    await Promise.allSettled(
+      allDocs.slice(i, i + BATCH).map(async (doc) => {
+        if (!doc.url.includes('africanfinancials.com') || doc.url.endsWith('.pdf')) return;
+        // Skip if listing already gave us ≥3 P&L figures
+        if (doc.figures.length >= 3) return;
+        try {
+          const extra = await fetchDocumentDetails(doc.url);
+          if (extra.length > 0) doc.figures = mergeFigures(doc.figures, extra);
+        } catch { /* best-effort — leave base figures unchanged */ }
+      })
+    );
   }
 
   return allDocs;
