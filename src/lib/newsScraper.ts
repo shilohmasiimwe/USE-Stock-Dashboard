@@ -297,7 +297,8 @@ async function extractDividendsWithScrapeGraph(sourceUrl: string, forcedTicker?:
       : 'Extract dividend announcements for Uganda Securities Exchange listed companies. Return ticker, company, dividend type, amount per share, currency, ex-dividend date, record date, payment date, status, and dividend year. Use ISO YYYY-MM-DD dates where possible.',
     outputSchema: DIVIDEND_EXTRACTION_SCHEMA,
     fetchConfig: {
-      mode: 'auto',
+      stealth: true,
+      mode: 'js',
       wait: 3000,
       timeout: 12000,
     },
@@ -337,6 +338,50 @@ async function extractDividendsWithScrapeGraph(sourceUrl: string, forcedTicker?:
       status: normalizeDividendStatus(dividend.status),
       year,
     }];
+  });
+}
+
+type ExtractedNewsPayload = {
+  articles?: Array<{
+    title: string;
+    url: string;
+    publishedAt?: string;
+    summary?: string;
+  }>;
+};
+
+const NEWS_EXTRACTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    articles: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          title:       { type: 'string' },
+          url:         { type: 'string' },
+          publishedAt: { type: 'string' },
+          summary:     { type: 'string' },
+        },
+        required: ['title', 'url'],
+      },
+    },
+  },
+} as const;
+
+async function extractNewsWithScrapeGraph(sourceUrl: string): Promise<RawArticle[]> {
+  const extraction = await extractWithScrapeGraph<ExtractedNewsPayload>({
+    url: sourceUrl,
+    prompt: 'Extract all news articles and company announcements from this page. For each item return the title, full URL, publication date in ISO YYYY-MM-DD format, and a brief summary (200 chars max).',
+    outputSchema: NEWS_EXTRACTION_SCHEMA,
+    fetchConfig: { stealth: true, mode: 'js', wait: 3000 },
+  });
+
+  if (!extraction.ok) return [];
+
+  return (extraction.data.articles ?? []).flatMap((a): RawArticle[] => {
+    if (!a.title || !a.url || a.title.length < 12) return [];
+    return [{ title: a.title, url: a.url, publishedAt: a.publishedAt, summary: a.summary }];
   });
 }
 
@@ -607,9 +652,17 @@ export async function refreshNews(): Promise<Record<string, NewsArticle[]>> {
   await Promise.allSettled(
     Object.entries(AFRICAN_FINANCIALS_COMPANY_URLS).map(async ([ticker, url]) => {
       try {
-        const res = await fetch(url, createFetchOptions(4_000));
-        if (!res.ok) return;
-        const rawArticles = parseHTMLArticles(await res.text(), url);
+        let rawArticles: RawArticle[] = [];
+
+        // Try plain fetch first (free, no credit cost)
+        try {
+          const res = await fetch(url, createFetchOptions(4_000));
+          if (res.ok) rawArticles = parseHTMLArticles(await res.text(), url);
+        } catch { /* fall through */ }
+
+        // ScrapeGraphAI stealth fallback — African Financials is Cloudflare-protected
+        if (rawArticles.length === 0) rawArticles = await extractNewsWithScrapeGraph(url);
+
         for (const raw of rawArticles) {
           addArticle(raw, [ticker], 'AfricanFinancials');
         }
@@ -667,10 +720,12 @@ export async function refreshDividends(): Promise<Record<string, DividendAnnounc
 
   for (const url of DIVIDEND_URLS) {
     try {
-      const res = await fetch(url, createFetchOptions(4_000));
-      if (!res.ok) continue;
-      const html = await res.text();
-      const parsedDividends = parseDividendHtml(html);
+      let parsedDividends: RawDividend[] = [];
+      try {
+        const res = await fetch(url, createFetchOptions(4_000));
+        if (res.ok) parsedDividends = parseDividendHtml(await res.text());
+      } catch { /* fall through to ScrapeGraphAI stealth */ }
+
       const dividends = parsedDividends.length > 0
         ? parsedDividends
         : await extractDividendsWithScrapeGraph(url);
@@ -684,8 +739,12 @@ export async function refreshDividends(): Promise<Record<string, DividendAnnounc
   await Promise.allSettled(
     Object.entries(AFRICAN_FINANCIALS_COMPANY_URLS).map(async ([ticker, url]) => {
       try {
-        const res = await fetch(url, createFetchOptions(4_000));
-        const parsedDividends = res.ok ? parseDividendHtml(await res.text(), ticker) : [];
+        let parsedDividends: RawDividend[] = [];
+        try {
+          const res = await fetch(url, createFetchOptions(4_000));
+          if (res.ok) parsedDividends = parseDividendHtml(await res.text(), ticker);
+        } catch { /* fall through to ScrapeGraphAI stealth */ }
+
         const dividends = parsedDividends.length > 0
           ? parsedDividends
           : await extractDividendsWithScrapeGraph(url, ticker);

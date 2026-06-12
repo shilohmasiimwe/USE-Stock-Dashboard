@@ -149,23 +149,21 @@ async function fetchDocumentDetails(docUrl: string): Promise<FinancialFigure[]> 
   let html = '';
   try {
     const res = await fetch(docUrl, createFetchOptions(8_000));
-    if (!res.ok) return [];
-    html = await res.text();
-  } catch {
-    return [];
+    if (res.ok) html = await res.text();
+  } catch { /* fall through to ScrapeGraphAI stealth */ }
+
+  // 1. HTML-based extraction (when plain fetch succeeds)
+  let htmlFigures: FinancialFigure[] = [];
+  if (html) {
+    const clean = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ');
+    const text = stripTags(clean).replace(/\s+/g, ' ');
+    htmlFigures = parseFigures(text);
+    if (htmlFigures.length >= 2) return htmlFigures;
   }
 
-  // 1. HTML-based extraction from the detail page content
-  const clean = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ');
-  const text = stripTags(clean).replace(/\s+/g, ' ');
-  const htmlFigures = parseFigures(text);
-
-  // If HTML gave us at least 2 labelled figures, return immediately
-  if (htmlFigures.length >= 2) return htmlFigures;
-
-  // 2. ScrapeGraphAI fallback with a tightly focused income statement prompt
+  // 2. ScrapeGraphAI with stealth — African Financials is Cloudflare-protected
   const extraction = await extractWithScrapeGraph<ISDetailPayload>({
     url: docUrl,
     prompt:
@@ -177,7 +175,7 @@ async function fetchDocumentDetails(docUrl: string): Promise<FinancialFigure[]> 
       'For each item provide: label (exact name used on the page), value (number), ' +
       'currency (UGX/KES/USD), unit (million/billion/trillion), and the raw text snippet.',
     outputSchema: IS_DETAIL_EXTRACTION_SCHEMA,
-    fetchConfig: { mode: 'auto', wait: 2000, timeout: 12000 },
+    fetchConfig: { stealth: true, mode: 'js', wait: 3000, timeout: 15000 },
     validate: isISDetailPayload,
   });
 
@@ -413,7 +411,8 @@ async function extractDocumentsWithScrapeGraph(sourceUrl: string): Promise<Omit<
     prompt: 'Extract Uganda-listed company financial documents. Return each document title, company, ticker if present, URL, document type, published date, year, period, sector, short summary, and any financial figures mentioned with label, value, currency, unit, and raw text.',
     outputSchema: FINANCIALS_EXTRACTION_SCHEMA,
     fetchConfig: {
-      mode: 'auto',
+      stealth: true,
+      mode: 'js',
       wait: 3000,
       timeout: 15000,
     },
@@ -484,11 +483,14 @@ async function fetchAllDocuments(): Promise<Omit<FinancialDocument, 'ticker'>[]>
 
   for (let page = 1; page <= MAX_PAGES; page++) {
     const url = page === 1 ? SOURCE_URL : `${SOURCE_URL}page/${page}/`;
-    const res = await fetch(url, createFetchOptions(8_000));
-    if (!res.ok) break;
 
-    const html = await res.text();
-    const parsedDocs = extractDocumentsFromHtml(html);
+    // Try plain fetch first (no credit cost); fall through to ScrapeGraphAI stealth on 403
+    let parsedDocs: Omit<FinancialDocument, 'ticker'>[] = [];
+    try {
+      const res = await fetch(url, createFetchOptions(8_000));
+      if (res.ok) parsedDocs = extractDocumentsFromHtml(await res.text());
+    } catch { /* fall through to ScrapeGraphAI stealth */ }
+
     const docs = parsedDocs.length > 0
       ? parsedDocs
       : await extractDocumentsWithScrapeGraph(url);
